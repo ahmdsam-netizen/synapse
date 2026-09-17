@@ -1,8 +1,8 @@
 import { Router } from 'express';
-import { signupHandler, loginHandler, refreshHandler, logoutHandler } from './auth.controller';
-import { signupLimiter } from '../../middleware/rateLimiter';
-import { validate } from '../../middleware/validate';
-import { signupSchema, loginSchema, refreshSchema } from './auth.schema';
+import { signupHandler, loginHandler, refreshHandler, logoutHandler } from './auth.controller.js';
+import { signupLimiter } from '../../middleware/rateLimiter.js';
+import { validate } from '../../middleware/validate.js';
+import { signupSchema, loginSchema, refreshSchema } from './auth.schema.js';
 
 const router = Router();
 

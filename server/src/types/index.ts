@@ -3,7 +3,7 @@ import type { Request } from 'express';
 export interface AuthUser {
   id: string;
   email: string;
-  collegeId: string;
+  collegeId: string | null;
 }
 
 export interface AuthRequest extends Request {

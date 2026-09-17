@@ -49,6 +49,7 @@ async function migrate() {
   } finally {
     client.release();
     await pool.end();
+    process.exit(0);
   }
 }
 

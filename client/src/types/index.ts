@@ -77,6 +77,11 @@ export interface RecommendedUser {
   matchedSkills: Skill[];
   matchedInterests: Interest[];
   skills: UserSkill[];
+  sameCollege?: boolean;
+  matchScore?: number;
+  source?: string;
+  year?: number | null;
+  viaConnectionName?: string;
 }
 
 export interface Group {
@@ -113,6 +118,8 @@ export interface BoardPosting {
   status: 'open' | 'closed';
   createdAt: string;
   hasRequested?: boolean;
+  expiresAt?: string | null;
+  expires_at?: string | null;
 }
 
 export interface JoinRequest {

@@ -22,6 +22,7 @@ export default function Navbar() {
     { name: 'Home', path: '/' },
     { name: 'Recommendations', path: '/recommendations' },
     { name: 'Boards', path: '/boards' },
+    { name: 'Connections', path: '/connections' },
   ];
 
   return (
@@ -36,7 +37,7 @@ export default function Navbar() {
                 <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
               </svg>
             </div>
-            <span className="text-xl font-bold tracking-tight text-gray-900">SkillConnect</span>
+            <span className="text-xl font-bold tracking-tight text-gray-900">Synapse</span>
           </Link>
         </div>
 

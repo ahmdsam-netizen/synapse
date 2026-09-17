@@ -12,10 +12,14 @@ export function formatDate(dateString: string): string {
   });
 }
 
-export function timeAgo(dateString: string): string {
-  const seconds = Math.floor(
-    (Date.now() - new Date(dateString).getTime()) / 1000
-  );
+export function timeAgo(dateString: string | null | undefined): string {
+  if (!dateString) return 'just now';
+  const time = new Date(dateString).getTime();
+  if (isNaN(time)) return 'just now';
+
+  const seconds = Math.floor((Date.now() - time) / 1000);
+  if (seconds < 5) return 'just now';
+
   const intervals = [
     { label: 'year', seconds: 31536000 },
     { label: 'month', seconds: 2592000 },
@@ -46,4 +50,25 @@ export function getInitials(name: string): string {
 export function truncate(text: string, maxLength: number): string {
   if (text.length <= maxLength) return text;
   return text.slice(0, maxLength) + '…';
+}
+
+export function formatTimeRemaining(dateString: string | null | undefined): string | null {
+  if (!dateString) return null;
+  const time = new Date(dateString).getTime();
+  if (isNaN(time)) return null;
+
+  const seconds = Math.floor((time - Date.now()) / 1000);
+  if (seconds <= 0) return 'Expired';
+
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+
+  if (days > 0) {
+    return hours > 0 ? `${days}d ${hours}h left` : `${days}d left`;
+  }
+  if (hours > 0) {
+    return minutes > 0 ? `${hours}h ${minutes}m left` : `${hours}h left`;
+  }
+  return `${Math.max(1, minutes)}m left`;
 }

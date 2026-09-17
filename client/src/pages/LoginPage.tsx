@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Link, useNavigate, Navigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 
@@ -10,9 +10,11 @@ export default function LoginPage() {
   const { login, isAuthenticated } = useAuth();
   const navigate = useNavigate();
 
-  if (isAuthenticated) {
-    return <Navigate to="/" replace />;
-  }
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigate('/', { replace: true });
+    }
+  }, [isAuthenticated, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -22,7 +24,7 @@ export default function LoginPage() {
       toast.success('Logged in successfully!');
       navigate('/', { replace: true });
     } catch (err: any) {
-      toast.error(err.response?.data?.error || 'Invalid email or password');
+      toast.error(err.response?.data?.error || err.message || 'Invalid email or password');
     } finally {
       setIsSubmitting(false);
     }
@@ -39,7 +41,7 @@ export default function LoginPage() {
             </svg>
           </div>
           <h2 className="mt-6 text-center text-3xl font-bold tracking-tight text-gray-900">
-            Sign in to SkillConnect
+            Sign in to Synapse
           </h2>
           <p className="mt-2 text-center text-sm text-gray-600">
             Or{' '}

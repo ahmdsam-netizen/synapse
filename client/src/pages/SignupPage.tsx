@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Link, useNavigate, Navigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 
@@ -10,9 +10,11 @@ export default function SignupPage() {
   const { signup, isAuthenticated } = useAuth();
   const navigate = useNavigate();
 
-  if (isAuthenticated) {
-    return <Navigate to="/" replace />;
-  }
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigate('/', { replace: true });
+    }
+  }, [isAuthenticated, navigate]);
 
   const validatePassword = (password: string) => {
     const errors = [];
@@ -102,7 +104,7 @@ export default function SignupPage() {
               />
             </div>
             <div>
-              <label htmlFor="email" className="sr-only">College Email address</label>
+              <label htmlFor="email" className="sr-only">Email address</label>
               <input
                 id="email"
                 name="email"
@@ -110,7 +112,7 @@ export default function SignupPage() {
                 autoComplete="email"
                 required
                 className="relative block w-full rounded-lg border-0 py-2.5 px-3 text-gray-900 ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:z-10 focus:ring-2 focus:ring-inset focus:ring-primary-600 sm:text-sm sm:leading-6"
-                placeholder="College Email address"
+                placeholder="Email address"
                 value={formData.email}
                 onChange={handleChange}
               />

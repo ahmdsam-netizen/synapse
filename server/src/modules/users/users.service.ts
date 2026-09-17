@@ -1,7 +1,7 @@
-import { query } from '../../config/database';
-import { recommendationQueue } from '../../config/queue';
-import { NotFoundError, ConflictError } from '../../utils/errors';
-import { computeCompleteness } from '../../utils/profileCompleteness';
+import { query } from '../../config/database.js';
+import { recommendationQueue } from '../../config/queue.js';
+import { NotFoundError, ConflictError, BadRequestError } from '../../utils/errors.js';
+import { computeCompleteness } from '../../utils/profileCompleteness.js';
 
 async function recomputeCompleteness(userId: string) {
   const userRes = await query(`SELECT name, bio, avatar_url, year_of_study, branch, looking_for FROM users WHERE id = $1`, [userId]);
@@ -56,17 +56,19 @@ export async function getProfile(viewerId: string | null, targetId: string) {
   );
 
   let connectionStatus = 'none';
+  let connectionId: string | null = null;
   let mutualConnections = 0;
 
   if (viewerId && viewerId !== targetId) {
     const connRes = await query(
-      `SELECT requester_id, receiver_id, status FROM connections 
+      `SELECT id AS connection_id, requester_id, receiver_id, status FROM connections 
        WHERE (requester_id = $1 AND receiver_id = $2) OR (requester_id = $2 AND receiver_id = $1)`,
       [viewerId, targetId]
     );
 
     if (connRes.rows.length > 0) {
       const conn = connRes.rows[0];
+      connectionId = conn.connection_id;
       if (conn.status === 'accepted') connectionStatus = 'connected';
       else if (conn.requester_id === viewerId) connectionStatus = 'pending_sent';
       else connectionStatus = 'pending_received';
@@ -87,6 +89,8 @@ export async function getProfile(viewerId: string | null, targetId: string) {
     interests: interestsRes.rows,
     workItems: workRes.rows,
     connectionStatus,
+    connectionId,
+    connection_id: connectionId,
     mutualConnections,
   };
 }
@@ -127,21 +131,47 @@ export async function updateProfile(userId: string, data: any) {
   return getMe(userId);
 }
 
-export async function addSkill(userId: string, skillId: string, proficiency: string) {
-  const skillRes = await query(`SELECT id FROM skills WHERE id = $1`, [skillId]);
+export async function addSkill(userId: string, payload: { skillId?: string; name?: string; proficiency: string }) {
+  let finalSkillId = payload.skillId;
+
+  if (!finalSkillId && payload.name) {
+    const trimmed = payload.name.trim();
+    const existing = await query(`SELECT id FROM skills WHERE LOWER(name) = LOWER($1) LIMIT 1`, [trimmed]);
+    if (existing.rows.length > 0) {
+      finalSkillId = existing.rows[0].id;
+    } else {
+      const inserted = await query(
+        `INSERT INTO skills (name, category) VALUES ($1, 'Other') RETURNING id`,
+        [trimmed]
+      );
+      finalSkillId = inserted.rows[0].id;
+    }
+  }
+
+  if (!finalSkillId) {
+    throw new BadRequestError('Skill ID or valid skill name is required');
+  }
+
+  const skillRes = await query(`SELECT id, name, category FROM skills WHERE id = $1`, [finalSkillId]);
   if (!skillRes.rows.length) throw new NotFoundError('Skill not found');
 
   await query(
     `INSERT INTO user_skills (user_id, skill_id, proficiency) 
      VALUES ($1, $2, $3) 
      ON CONFLICT (user_id, skill_id) DO UPDATE SET proficiency = $3 RETURNING *`,
-    [userId, skillId, proficiency]
+    [userId, finalSkillId, payload.proficiency]
   );
 
   await recomputeCompleteness(userId);
   await recommendationQueue.add('computeSimilarity', { userId });
 
-  return { skillId, proficiency };
+  return { 
+    id: finalSkillId, 
+    skill_id: finalSkillId,
+    name: skillRes.rows[0].name, 
+    category: skillRes.rows[0].category, 
+    proficiency: payload.proficiency 
+  };
 }
 
 export async function removeSkill(userId: string, skillId: string) {
@@ -152,21 +182,46 @@ export async function removeSkill(userId: string, skillId: string) {
   await recommendationQueue.add('computeSimilarity', { userId });
 }
 
-export async function addInterest(userId: string, interestId: string) {
-  const intRes = await query(`SELECT id FROM interests WHERE id = $1`, [interestId]);
+export async function addInterest(userId: string, payload: { interestId?: string; name?: string }) {
+  let finalInterestId = payload.interestId;
+
+  if (!finalInterestId && payload.name) {
+    const trimmed = payload.name.trim();
+    const existing = await query(`SELECT id FROM interests WHERE LOWER(name) = LOWER($1) LIMIT 1`, [trimmed]);
+    if (existing.rows.length > 0) {
+      finalInterestId = existing.rows[0].id;
+    } else {
+      const inserted = await query(
+        `INSERT INTO interests (name, category) VALUES ($1, 'Other') RETURNING id`,
+        [trimmed]
+      );
+      finalInterestId = inserted.rows[0].id;
+    }
+  }
+
+  if (!finalInterestId) {
+    throw new BadRequestError('Interest ID or valid interest name is required');
+  }
+
+  const intRes = await query(`SELECT id, name, category FROM interests WHERE id = $1`, [finalInterestId]);
   if (!intRes.rows.length) throw new NotFoundError('Interest not found');
 
   await query(
     `INSERT INTO user_interests (user_id, interest_id) 
      VALUES ($1, $2) 
      ON CONFLICT (user_id, interest_id) DO NOTHING RETURNING *`,
-    [userId, interestId]
+    [userId, finalInterestId]
   );
 
   await recomputeCompleteness(userId);
   await recommendationQueue.add('computeSimilarity', { userId });
 
-  return { interestId };
+  return { 
+    id: finalInterestId, 
+    interest_id: finalInterestId,
+    name: intRes.rows[0].name, 
+    category: intRes.rows[0].category 
+  };
 }
 
 export async function removeInterest(userId: string, interestId: string) {
@@ -233,19 +288,51 @@ export async function deleteWorkItem(userId: string, workItemId: string) {
 }
 
 export async function searchSkills(q: string) {
-  const queryStr = q ? \`%\${q}%\` : '%';
+  if (!q || !q.trim()) {
+    const res = await query(
+      `SELECT id, name, category FROM skills ORDER BY category, name LIMIT 100`
+    );
+    return res.rows;
+  }
+  const term = q.trim();
+  const queryStr = `%${term}%`;
   const res = await query(
-    `SELECT id, name, category FROM skills WHERE name ILIKE $1 ORDER BY name LIMIT 20`,
-    [queryStr]
+    `SELECT id, name, category FROM skills 
+     WHERE name ILIKE $1 
+     ORDER BY 
+       CASE 
+         WHEN LOWER(name) = LOWER($2) THEN 1
+         WHEN LOWER(name) LIKE LOWER($3) THEN 2
+         ELSE 3 
+       END, 
+       name 
+     LIMIT 50`,
+    [queryStr, term, `${term}%`]
   );
   return res.rows;
 }
 
 export async function searchInterests(q: string) {
-  const queryStr = q ? \`%\${q}%\` : '%';
+  if (!q || !q.trim()) {
+    const res = await query(
+      `SELECT id, name, category FROM interests ORDER BY category, name LIMIT 100`
+    );
+    return res.rows;
+  }
+  const term = q.trim();
+  const queryStr = `%${term}%`;
   const res = await query(
-    `SELECT id, name, category FROM interests WHERE name ILIKE $1 ORDER BY name LIMIT 20`,
-    [queryStr]
+    `SELECT id, name, category FROM interests 
+     WHERE name ILIKE $1 
+     ORDER BY 
+       CASE 
+         WHEN LOWER(name) = LOWER($2) THEN 1
+         WHEN LOWER(name) LIKE LOWER($3) THEN 2
+         ELSE 3 
+       END, 
+       name 
+     LIMIT 50`,
+    [queryStr, term, `${term}%`]
   );
   return res.rows;
 }

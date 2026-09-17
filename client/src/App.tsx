@@ -7,6 +7,7 @@ import HomePage from './pages/HomePage';
 import RecommendationsPage from './pages/RecommendationsPage';
 import BoardPage from './pages/BoardPage';
 import ProfilePage from './pages/ProfilePage';
+import ConnectionsPage from './pages/ConnectionsPage';
 import NotFoundPage from './pages/NotFoundPage';
 
 export default function App() {
@@ -19,6 +20,7 @@ export default function App() {
           <Route path="/" element={<HomePage />} />
           <Route path="/recommendations" element={<RecommendationsPage />} />
           <Route path="/boards" element={<BoardPage />} />
+          <Route path="/connections" element={<ConnectionsPage />} />
           <Route path="/profile/me" element={<ProfilePage />} />
           <Route path="/profile/:id" element={<ProfilePage />} />
         </Route>

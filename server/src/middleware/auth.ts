@@ -1,10 +1,10 @@
 import { Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
-import { AuthRequest } from '../types';
-import { env } from '../config/env';
-import { redis } from '../config/redis';
-import { query } from '../config/database';
-import { UnauthorizedError } from '../utils/errors';
+import { AuthRequest } from '../types/index.js';
+import { env } from '../config/env.js';
+import { redis } from '../config/redis.js';
+import { query } from '../config/database.js';
+import { UnauthorizedError } from '../utils/errors.js';
 
 export const requireAuth = async (req: AuthRequest, res: Response, next: NextFunction) => {
   const authHeader = req.headers.authorization;

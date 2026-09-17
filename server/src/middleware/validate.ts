@@ -12,7 +12,12 @@ export function validate(
     if (!result.success) {
       throw result.error; // Caught by errorHandler which handles ZodError
     }
-    req[target] = result.data;
+    Object.defineProperty(req, target, {
+      value: result.data,
+      writable: true,
+      enumerable: true,
+      configurable: true,
+    });
     next();
   };
 }

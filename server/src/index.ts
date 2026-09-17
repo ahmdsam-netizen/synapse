@@ -13,6 +13,8 @@ import searchRoutes from './modules/search/search.routes.js';
 import groupRoutes from './modules/groups/groups.routes.js';
 import boardRoutes from './modules/boards/boards.routes.js';
 
+import { pool } from './config/database.js';
+
 const app = express();
 
 // Global middleware
@@ -39,7 +41,28 @@ app.use('/api/boards', boardRoutes);
 // Error handler (must be last)
 app.use(errorHandler);
 
-app.listen(env.PORT, () => {
+// Ensure board_postings has expires_at column and index
+pool.query(`
+  ALTER TABLE board_postings ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP DEFAULT (NOW() + INTERVAL '7 days');
+  UPDATE board_postings SET expires_at = NOW() + INTERVAL '7 days' WHERE expires_at IS NULL;
+  CREATE INDEX IF NOT EXISTS idx_postings_expires_at ON board_postings(expires_at);
+`).catch((err) => {
+  console.error('Postings expiration schema check error:', err.message);
+});
+
+// Periodic background job: automatically delete expired postings every 60 seconds
+setInterval(async () => {
+  try {
+    const res = await pool.query(`DELETE FROM board_postings WHERE expires_at IS NOT NULL AND expires_at <= NOW()`);
+    if (res.rowCount && res.rowCount > 0) {
+      console.log(`[Auto-Delete] Cleaned up ${res.rowCount} expired board posting(s)`);
+    }
+  } catch (err: any) {
+    console.error('Auto-delete expired postings error:', err.message);
+  }
+}, 60 * 1000);
+
+app.listen(env.PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${env.PORT} in ${env.NODE_ENV} mode`);
 });
 

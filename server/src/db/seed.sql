@@ -9,7 +9,8 @@ INSERT INTO colleges (name, email_domain, city) VALUES
 ('Indian Institute of Technology Madras', 'iitm.ac.in', 'Chennai'),
 ('Jadavpur University', 'jadavpuruniversity.in', 'Kolkata'),
 ('SRM Institute of Science and Technology', 'srmist.edu.in', 'Chennai'),
-('Indian Institute of Information Technology Hyderabad', 'iiit.ac.in', 'Hyderabad')
+('Indian Institute of Information Technology Hyderabad', 'iiit.ac.in', 'Hyderabad'),
+('Gmail Community', 'gmail.com', 'Global')
 ON CONFLICT (email_domain) DO NOTHING;
 
 -- Skills

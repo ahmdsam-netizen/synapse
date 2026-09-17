@@ -1,6 +1,6 @@
 import { Response } from 'express';
-import { AuthRequest } from '../../types';
-import * as authService from './auth.service';
+import { AuthRequest } from '../../types/index.js';
+import * as authService from './auth.service.js';
 
 export const signupHandler = async (req: AuthRequest, res: Response) => {
   const { email, password, name } = req.body;

@@ -10,7 +10,7 @@ export const connectionIdParamSchema = z.object({
 
 export const connectionsQuerySchema = z.object({
   cursor: z.string().optional(),
-  limit: z.coerce.number().min(1).max(30).optional().default(30),
+  limit: z.coerce.number().min(1).max(100).optional().default(30),
 });
 
 export const mutualParamSchema = z.object({

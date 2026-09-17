@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import { requireAuth } from '../../middleware/auth';
-import { validate } from '../../middleware/validate';
+import { requireAuth } from '../../middleware/auth.js';
+import { validate } from '../../middleware/validate.js';
 import {
   getMeHandler,
   updateProfileHandler,
@@ -14,7 +14,7 @@ import {
   searchSkillsHandler,
   searchInterestsHandler,
   getProfileHandler
-} from './users.controller';
+} from './users.controller.js';
 import {
   updateProfileSchema,
   addSkillSchema,
@@ -23,7 +23,7 @@ import {
   updateWorkItemSchema,
   taxonomyQuerySchema,
   userIdParamSchema
-} from './users.schema';
+} from './users.schema.js';
 
 const router = Router();
 

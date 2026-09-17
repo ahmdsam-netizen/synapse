@@ -8,23 +8,23 @@ export const sendRequestHandler = async (req: AuthRequest, res: Response) => {
 };
 
 export const acceptHandler = async (req: AuthRequest, res: Response) => {
-  const result = await connectionsService.acceptConnection(req.params.id, req.user!.id);
+  const result = await connectionsService.acceptConnection(req.params.id as string, req.user!.id);
   res.status(200).json(result);
 };
 
 export const declineHandler = async (req: AuthRequest, res: Response) => {
-  const result = await connectionsService.declineConnection(req.params.id, req.user!.id);
+  const result = await connectionsService.declineConnection(req.params.id as string, req.user!.id);
   res.status(200).json(result);
 };
 
 export const removeHandler = async (req: AuthRequest, res: Response) => {
-  const result = await connectionsService.removeConnection(req.params.id, req.user!.id);
+  const result = await connectionsService.removeConnection(req.params.id as string, req.user!.id);
   res.status(200).json(result);
 };
 
 export const listHandler = async (req: AuthRequest, res: Response) => {
   const cursor = (req.query.cursor as string) || null;
-  const limit = (req.query.limit as unknown as number) || 30;
+  const limit = Number(req.query.limit) || 30;
   const result = await connectionsService.listConnections(req.user!.id, cursor, limit);
   res.status(200).json(result);
 };
@@ -36,7 +36,7 @@ export const pendingHandler = async (req: AuthRequest, res: Response) => {
 
 export const mutualHandler = async (req: AuthRequest, res: Response) => {
   const cursor = (req.query.cursor as string) || null;
-  const limit = (req.query.limit as unknown as number) || 30;
-  const result = await connectionsService.getMutualConnections(req.user!.id, req.params.userId, cursor, limit);
+  const limit = Number(req.query.limit) || 30;
+  const result = await connectionsService.getMutualConnections(req.user!.id, req.params.userId as string, cursor, limit);
   res.status(200).json(result);
 };

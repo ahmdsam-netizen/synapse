@@ -1,9 +1,9 @@
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { query } from '../../config/database';
-import { env } from '../../config/env';
-import { UnauthorizedError, ValidationError, ConflictError } from '../../utils/errors';
+import { query } from '../../config/database.js';
+import { env } from '../../config/env.js';
+import { UnauthorizedError, ValidationError, ConflictError } from '../../utils/errors.js';
 
 function formatUser(row: any) {
   return {
@@ -19,11 +19,11 @@ function formatUser(row: any) {
   };
 }
 
-async function generateTokens(userId: string, email: string, collegeId: string) {
+async function generateTokens(userId: string, email: string, collegeId: string | null) {
   const accessToken = jwt.sign(
     { id: userId, email, collegeId },
     env.JWT_SECRET,
-    { expiresIn: env.JWT_ACCESS_EXPIRY }
+    { expiresIn: env.JWT_ACCESS_EXPIRY as any }
   );
 
   const refreshToken = crypto.randomBytes(64).toString('hex');
@@ -43,17 +43,28 @@ async function generateTokens(userId: string, email: string, collegeId: string) 
 }
 
 export async function signup(email: string, password: string, name: string) {
-  const domain = email.split('@')[1];
+  const domain = email.split('@')[1]?.toLowerCase().trim();
   if (!domain) {
     throw new ValidationError('Invalid email format');
   }
 
+  let collegeId: string | null = null;
   const collegeRes = await query(`SELECT id FROM colleges WHERE email_domain = $1`, [domain]);
-  if (collegeRes.rows.length === 0) {
-    const allCollegesRes = await query(`SELECT name, email_domain FROM colleges ORDER BY name`);
-    throw new ValidationError('Email domain not supported', { supportedColleges: allCollegesRes.rows });
+  if (collegeRes.rows.length > 0) {
+    collegeId = collegeRes.rows[0].id;
+  } else {
+    // Automatically register or link the domain so any email (e.g. gmail.com, outlook.com, custom) is supported
+    const baseDomain = domain.split('.')[0] || 'Community';
+    const friendlyName = baseDomain.charAt(0).toUpperCase() + baseDomain.slice(1) + ' Community';
+    const fallbackCollege = await query(
+      `INSERT INTO colleges (name, email_domain, city)
+       VALUES ($1, $2, 'Global')
+       ON CONFLICT (email_domain) DO UPDATE SET email_domain = EXCLUDED.email_domain
+       RETURNING id`,
+      [friendlyName, domain]
+    );
+    collegeId = fallbackCollege.rows[0]?.id || null;
   }
-  const collegeId = collegeRes.rows[0].id;
 
   const userRes = await query(`SELECT id FROM users WHERE email = $1`, [email]);
   if (userRes.rows.length > 0) {
@@ -79,7 +90,7 @@ export async function login(email: string, password: string) {
   const userRes = await query(
     `SELECT u.*, c.name as college_name 
      FROM users u 
-     JOIN colleges c ON u.college_id = c.id 
+     LEFT JOIN colleges c ON u.college_id = c.id 
      WHERE u.email = $1`,
     [email]
   );

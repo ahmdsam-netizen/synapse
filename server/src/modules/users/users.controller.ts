@@ -1,10 +1,10 @@
 import { Request, Response } from 'express';
-import * as usersService from './users.service';
+import * as usersService from './users.service.js';
 
 export async function getProfileHandler(req: Request, res: Response) {
   // @ts-ignore
   const viewerId = req.user?.id || null;
-  const profile = await usersService.getProfile(viewerId, req.params.id);
+  const profile = await usersService.getProfile(viewerId, req.params.id as string);
   res.json({ data: profile });
 }
 
@@ -22,7 +22,11 @@ export async function updateProfileHandler(req: Request, res: Response) {
 
 export async function addSkillHandler(req: Request, res: Response) {
   // @ts-ignore
-  const skill = await usersService.addSkill(req.user.id, req.body.skillId, req.body.proficiency);
+  const skill = await usersService.addSkill(req.user.id, {
+    skillId: req.body.skillId,
+    name: req.body.name,
+    proficiency: req.body.proficiency
+  });
   res.json({ data: skill });
 }
 
@@ -34,7 +38,10 @@ export async function removeSkillHandler(req: Request, res: Response) {
 
 export async function addInterestHandler(req: Request, res: Response) {
   // @ts-ignore
-  const interest = await usersService.addInterest(req.user.id, req.body.interestId);
+  const interest = await usersService.addInterest(req.user.id, {
+    interestId: req.body.interestId,
+    name: req.body.name
+  });
   res.json({ data: interest });
 }
 
@@ -52,13 +59,13 @@ export async function createWorkItemHandler(req: Request, res: Response) {
 
 export async function updateWorkItemHandler(req: Request, res: Response) {
   // @ts-ignore
-  const workItem = await usersService.updateWorkItem(req.user.id, req.params.id, req.body);
+  const workItem = await usersService.updateWorkItem(req.user.id, req.params.id as string, req.body);
   res.json({ data: workItem });
 }
 
 export async function deleteWorkItemHandler(req: Request, res: Response) {
   // @ts-ignore
-  await usersService.deleteWorkItem(req.user.id, req.params.id);
+  await usersService.deleteWorkItem(req.user.id, req.params.id as string);
   res.status(204).send();
 }
 

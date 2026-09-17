@@ -11,14 +11,22 @@ export const usersApi = {
   updateProfile: (data: Partial<Pick<User, 'name' | 'bio' | 'avatarUrl' | 'yearOfStudy' | 'branch' | 'lookingFor'>>) =>
     apiClient.put<{ user: User }>('/users/me', data),
 
-  addSkill: (skillId: string, proficiency: string) =>
-    apiClient.post<{ skill: UserSkill }>('/users/me/skills', { skillId, proficiency }),
+  addSkill: (dataOrId: string | { skillId?: string; name?: string; proficiency: string }, proficiency?: string) => {
+    if (typeof dataOrId === 'string') {
+      return apiClient.post<{ skill: UserSkill }>('/users/me/skills', { skillId: dataOrId, proficiency });
+    }
+    return apiClient.post<{ skill: UserSkill }>('/users/me/skills', dataOrId);
+  },
 
   removeSkill: (skillId: string) =>
     apiClient.delete(`/users/me/skills/${skillId}`),
 
-  addInterest: (interestId: string) =>
-    apiClient.post<{ interest: Interest }>('/users/me/interests', { interestId }),
+  addInterest: (dataOrId: string | { interestId?: string; name?: string }) => {
+    if (typeof dataOrId === 'string') {
+      return apiClient.post<{ interest: Interest }>('/users/me/interests', { interestId: dataOrId });
+    }
+    return apiClient.post<{ interest: Interest }>('/users/me/interests', dataOrId);
+  },
 
   removeInterest: (interestId: string) =>
     apiClient.delete(`/users/me/interests/${interestId}`),

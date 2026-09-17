@@ -75,15 +75,20 @@ export async function acceptConnection(connectionId: string, userId: string) {
 
     await client.query(
       `INSERT INTO connection_edges (user_id, friend_id, connected_at) 
-       VALUES ($1, $2, NOW()), ($2, $1, NOW())`,
+       VALUES ($1, $2, NOW()), ($2, $1, NOW())
+       ON CONFLICT (user_id, friend_id) DO UPDATE SET connected_at = NOW()`,
       [requesterId, userId]
     );
 
     await client.query('COMMIT');
 
     // Enqueue background jobs for both users and batch updates
-    await recommendationQueue.add('computeSecondDegree', { userId: requesterId });
-    await recommendationQueue.add('computeSecondDegree', { userId });
+    try {
+      await recommendationQueue.add('computeSecondDegree', { userId: requesterId });
+      await recommendationQueue.add('computeSecondDegree', { userId });
+    } catch (qErr) {
+      console.error('Failed to enqueue recommendation job on accept:', qErr);
+    }
 
     return updateRes.rows[0];
   } catch (error) {
@@ -110,10 +115,18 @@ export async function declineConnection(connectionId: string, userId: string) {
   return res.rows[0];
 }
 
-export async function removeConnection(connectionId: string, userId: string) {
+export async function removeConnection(connectionIdOrFriendId: string, userId: string) {
   const connRes = await query(
-    `SELECT * FROM connections WHERE id = $1 AND (requester_id = $2 OR receiver_id = $2) AND status = 'accepted'`,
-    [connectionId, userId]
+    `SELECT * FROM connections
+     WHERE status = 'accepted'
+       AND (requester_id = $2 OR receiver_id = $2)
+       AND (
+         id = $1
+         OR (requester_id = $1 AND receiver_id = $2)
+         OR (receiver_id = $1 AND requester_id = $2)
+       )
+     LIMIT 1`,
+    [connectionIdOrFriendId, userId]
   );
 
   if (connRes.rows.length === 0) {
@@ -128,7 +141,7 @@ export async function removeConnection(connectionId: string, userId: string) {
   try {
     await client.query('BEGIN');
 
-    await client.query('DELETE FROM connections WHERE id = $1', [connectionId]);
+    await client.query('DELETE FROM connections WHERE id = $1', [conn.id]);
 
     await client.query(
       `DELETE FROM connection_edges 
@@ -139,8 +152,12 @@ export async function removeConnection(connectionId: string, userId: string) {
 
     await client.query('COMMIT');
 
-    await recommendationQueue.add('computeSecondDegree', { userId: requesterId });
-    await recommendationQueue.add('computeSecondDegree', { userId: receiverId });
+    try {
+      await recommendationQueue.add('computeSecondDegree', { userId: requesterId });
+      await recommendationQueue.add('computeSecondDegree', { userId: receiverId });
+    } catch (qErr) {
+      console.error('Failed to enqueue recommendation job on remove:', qErr);
+    }
 
     return { removed: true };
   } catch (error) {
@@ -153,10 +170,13 @@ export async function removeConnection(connectionId: string, userId: string) {
 
 export async function listConnections(userId: string, cursor: string | null, limit: number): Promise<PaginationResult<any>> {
   let queryText = `
-    SELECT ce.friend_id, ce.connected_at,
-           u.id, u.name, u.avatar_url, u.bio, u.college_id, u.year_of_study, u.branch,
+    SELECT ce.friend_id, ce.connected_at, conn.id AS connection_id,
+           u.id, u.name, u.avatar_url, u.bio, u.college_id, u.year_of_study, u.branch, u.looking_for,
            c.name as college_name
     FROM connection_edges ce
+    JOIN connections conn ON conn.status = 'accepted'
+      AND ((conn.requester_id = ce.user_id AND conn.receiver_id = ce.friend_id)
+        OR (conn.receiver_id = ce.user_id AND conn.requester_id = ce.friend_id))
     JOIN users u ON u.id = ce.friend_id
     LEFT JOIN colleges c ON c.id = u.college_id
     WHERE ce.user_id = $1
@@ -176,15 +196,56 @@ export async function listConnections(userId: string, cursor: string | null, lim
 
   const res = await query(queryText, params);
 
-  return buildPaginationResult(res.rows, limit, (row) => ({
+  const pagination = buildPaginationResult(res.rows, limit, (row) => ({
     connectedAt: row.connected_at,
     friendId: row.friend_id,
   }));
+
+  const friendIds = pagination.data.map(r => r.friend_id);
+  const skillsMap = new Map<string, any[]>();
+  if (friendIds.length > 0) {
+    const skillsRes = await query(
+      `SELECT us.user_id, s.id, s.name, s.category, us.proficiency 
+       FROM user_skills us JOIN skills s ON s.id = us.skill_id 
+       WHERE us.user_id = ANY($1)`,
+      [friendIds]
+    );
+    for (const row of skillsRes.rows) {
+      if (!skillsMap.has(row.user_id)) skillsMap.set(row.user_id, []);
+      skillsMap.get(row.user_id)!.push(row);
+    }
+  }
+
+  const hydratedData = pagination.data.map(r => ({
+    id: r.id,
+    friendId: r.friend_id,
+    connectionId: r.connection_id,
+    connection_id: r.connection_id,
+    name: r.name,
+    avatarUrl: r.avatar_url,
+    avatar_url: r.avatar_url,
+    bio: r.bio,
+    collegeId: r.college_id,
+    collegeName: r.college_name,
+    college_name: r.college_name,
+    yearOfStudy: r.year_of_study,
+    year_of_study: r.year_of_study,
+    branch: r.branch,
+    lookingFor: r.looking_for,
+    connectedAt: r.connected_at,
+    connected_at: r.connected_at,
+    skills: skillsMap.get(r.id) || []
+  }));
+
+  return {
+    ...pagination,
+    data: hydratedData
+  };
 }
 
 export async function listPending(userId: string) {
   const res = await query(
-    `SELECT c.*, u.name, u.avatar_url, u.bio, u.college_id, u.year_of_study,
+    `SELECT c.*, u.name, u.avatar_url, u.bio, u.college_id, u.year_of_study, u.branch,
             col.name as college_name
      FROM connections c
      JOIN users u ON u.id = c.requester_id
@@ -193,7 +254,26 @@ export async function listPending(userId: string) {
      ORDER BY c.created_at DESC`,
     [userId]
   );
-  return res.rows;
+  return res.rows.map(r => ({
+    id: r.id,
+    requesterId: r.requester_id,
+    requester_id: r.requester_id,
+    receiverId: r.receiver_id,
+    receiver_id: r.receiver_id,
+    status: r.status,
+    createdAt: r.created_at,
+    created_at: r.created_at,
+    name: r.name,
+    avatarUrl: r.avatar_url,
+    avatar_url: r.avatar_url,
+    bio: r.bio,
+    collegeId: r.college_id,
+    collegeName: r.college_name,
+    college_name: r.college_name,
+    yearOfStudy: r.year_of_study,
+    year_of_study: r.year_of_study,
+    branch: r.branch
+  }));
 }
 
 export async function getMutualConnections(userId: string, otherUserId: string, cursor: string | null, limit: number): Promise<PaginationResult<any>> {

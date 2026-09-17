@@ -21,11 +21,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const token = localStorage.getItem('accessToken');
     if (token) {
-      apiClient.get<{ user: User }>('/users/me')
-        .then(({ data }) => setUser(data.user))
+      apiClient.get('/users/me')
+        .then(({ data }) => {
+          const profile = (data as any)?.data || (data as any)?.user || data;
+          setUser(profile);
+        })
         .catch(() => {
           localStorage.removeItem('accessToken');
           localStorage.removeItem('refreshToken');
+          setUser(null);
         })
         .finally(() => setIsLoading(false));
     } else {
@@ -37,14 +41,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data } = await apiClient.post<LoginResponse>('/auth/login', { email, password });
     localStorage.setItem('accessToken', data.tokens.accessToken);
     localStorage.setItem('refreshToken', data.tokens.refreshToken);
-    setUser(data.user);
+    const loggedUser = (data as any)?.user || (data as any)?.data || data;
+    setUser(loggedUser);
   }, []);
 
   const signup = useCallback(async (email: string, password: string, name: string) => {
     const { data } = await apiClient.post<LoginResponse>('/auth/signup', { email, password, name });
     localStorage.setItem('accessToken', data.tokens.accessToken);
     localStorage.setItem('refreshToken', data.tokens.refreshToken);
-    setUser(data.user);
+    const signedUpUser = (data as any)?.user || (data as any)?.data || data;
+    setUser(signedUpUser);
   }, []);
 
   const logout = useCallback(async () => {
@@ -67,7 +73,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <AuthContext value={{
+    <AuthContext.Provider value={{
       user,
       isAuthenticated: !!user,
       isLoading,
@@ -77,7 +83,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       updateUser,
     }}>
       {children}
-    </AuthContext>
+    </AuthContext.Provider>
   );
 }
 

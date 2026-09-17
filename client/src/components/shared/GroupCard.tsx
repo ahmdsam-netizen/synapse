@@ -1,0 +1,53 @@
+import React from 'react';
+import { cn } from '../../lib/utils';
+import { StatusBadge } from './StatusBadge';
+import { UsersIcon } from '@heroicons/react/24/outline';
+import { Group } from '../../types';
+
+interface GroupCardProps {
+  group: Group;
+  onClick: () => void;
+  role?: 'admin' | 'member';
+  pendingRequestsCount?: number;
+}
+
+export function GroupCard({ group, onClick, role, pendingRequestsCount = 0 }: GroupCardProps) {
+  return (
+    <div
+      onClick={onClick}
+      className="relative flex cursor-pointer flex-col gap-4 rounded-xl border border-gray-100 bg-white p-6 shadow-sm transition-all hover:shadow-md hover:border-primary-100"
+    >
+      {role === 'admin' && pendingRequestsCount > 0 && (
+        <div className="absolute -top-2 -right-2 flex h-6 w-6 items-center justify-center rounded-full bg-red-500 text-xs font-bold text-white shadow">
+          {pendingRequestsCount > 99 ? '99+' : pendingRequestsCount}
+        </div>
+      )}
+
+      <div className="flex items-start justify-between">
+        <h3 className="text-lg font-semibold text-gray-900 line-clamp-1">{group.name}</h3>
+        <div className="flex items-center gap-2">
+          {group.status === 'open' ? (
+            <div className="h-2.5 w-2.5 rounded-full bg-green-500" title="Open" />
+          ) : (
+            <div className="h-2.5 w-2.5 rounded-full bg-gray-400" title="Closed" />
+          )}
+        </div>
+      </div>
+
+      <p className="text-sm text-gray-600 line-clamp-2 min-h-[2.5rem]">
+        {group.description || 'No description provided.'}
+      </p>
+
+      <div className="mt-auto flex items-center justify-between pt-2">
+        <div className="flex items-center text-sm text-gray-500">
+          <UsersIcon className="mr-1.5 h-4 w-4" />
+          {group.memberCount ?? (group as any).member_count ?? 1} {(group.maxMembers ?? (group as any).max_members) ? `/ ${group.maxMembers ?? (group as any).max_members}` : ''} members
+        </div>
+        
+        {role && (
+          <StatusBadge status={role} />
+        )}
+      </div>
+    </div>
+  );
+}

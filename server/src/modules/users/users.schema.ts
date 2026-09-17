@@ -10,12 +10,18 @@ export const updateProfileSchema = z.object({
 });
 
 export const addSkillSchema = z.object({
-  skillId: z.string().uuid(),
+  skillId: z.string().uuid().optional(),
+  name: z.string().min(1).max(100).optional(),
   proficiency: z.enum(['beginner', 'intermediate', 'advanced'])
+}).refine((data) => Boolean(data.skillId || data.name), {
+  message: 'Either skillId or name must be provided'
 });
 
 export const addInterestSchema = z.object({
-  interestId: z.string().uuid()
+  interestId: z.string().uuid().optional(),
+  name: z.string().min(1).max(100).optional()
+}).refine((data) => Boolean(data.interestId || data.name), {
+  message: 'Either interestId or name must be provided'
 });
 
 export const createWorkItemSchema = z.object({
