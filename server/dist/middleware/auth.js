@@ -4,6 +4,17 @@ import { redis } from '../config/redis.js';
 import { query } from '../config/database.js';
 import { UnauthorizedError } from '../utils/errors.js';
 export const requireAuth = async (req, res, next) => {
+    // 1. Gateway Forwarded Identity (Microservices Mode)
+    const gatewayUserId = req.headers['x-user-id'];
+    if (gatewayUserId) {
+        req.user = {
+            id: gatewayUserId,
+            email: req.headers['x-user-email'] || '',
+            collegeId: req.headers['x-user-college-id'] || '',
+        };
+        return next();
+    }
+    // 2. Direct Bearer Token Fallback (Standalone / Local Mode)
     const authHeader = req.headers.authorization;
     if (!authHeader?.startsWith('Bearer ')) {
         throw new UnauthorizedError('Missing or invalid authorization header');

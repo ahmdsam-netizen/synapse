@@ -12,6 +12,10 @@ export declare function getSimilarityRecs(userId: string, collegeId: string | nu
         lookingFor: any;
         sameCollege: boolean;
         score: any;
+        matchScore: number | undefined;
+        similarityScore: number | undefined;
+        matchPercentage: number | undefined;
+        match_percentage: number | undefined;
         mutualCount: any;
         viaConnection: any;
         matchedSkills: any;
@@ -39,6 +43,10 @@ export declare function getSecondDegreeRecs(userId: string, collegeId: string | 
         lookingFor: any;
         sameCollege: boolean;
         score: any;
+        matchScore: number | undefined;
+        similarityScore: number | undefined;
+        matchPercentage: number | undefined;
+        match_percentage: number | undefined;
         mutualCount: any;
         viaConnection: any;
         matchedSkills: any;

@@ -81,7 +81,13 @@ async function hydrateBoardPostings(rows: any[], viewerUserId?: string) {
       created_at: r.created_at,
       hasRequested: requestedPostingIds.has(r.id),
       collegeName: r.college_name,
-      college_name: r.college_name
+      college_name: r.college_name,
+      matchPercentage: (!viewerUserId || (r.creator_id !== viewerUserId && r.group_creator_id !== viewerUserId && r.creatorId !== viewerUserId)) && ((r.required_skill_ids || []).length + (r.required_interest_ids || []).length > 0)
+        ? Math.round(((matchedSkills.length + matchedInterests.length) / ((r.required_skill_ids || []).length + (r.required_interest_ids || []).length)) * 100)
+        : undefined,
+      match_percentage: (!viewerUserId || (r.creator_id !== viewerUserId && r.group_creator_id !== viewerUserId && r.creatorId !== viewerUserId)) && ((r.required_skill_ids || []).length + (r.required_interest_ids || []).length > 0)
+        ? Math.round(((matchedSkills.length + matchedInterests.length) / ((r.required_skill_ids || []).length + (r.required_interest_ids || []).length)) * 100)
+        : undefined
     };
   });
 }
@@ -100,7 +106,7 @@ export const getGlobalBoard = async (cursor: string | undefined, limit: number, 
   const params: any[] = [];
   let paramIndex = 1;
   let baseQuery = `
-    SELECT bp.*, g.name as group_name, g.college_id as group_college_id,
+    SELECT bp.*, g.name as group_name, g.college_id as group_college_id, g.creator_id,
            c.name as college_name
     FROM board_postings bp
     JOIN groups g ON g.id = bp.group_id
@@ -240,7 +246,7 @@ export const getMyPostings = async (userId: string, cursor: string | undefined, 
   const params: any[] = [userId];
   let paramIndex = 2;
   let baseQuery = `
-    SELECT bp.*, g.name as group_name, g.college_id as group_college_id,
+    SELECT bp.*, g.name as group_name, g.college_id as group_college_id, g.creator_id as creator_id,
            c.name as college_name,
            (SELECT COUNT(*) FROM join_requests jr WHERE jr.posting_id = bp.id AND jr.status = 'pending') as pending_request_count
     FROM board_postings bp
@@ -272,6 +278,8 @@ export const getMyPostings = async (userId: string, cursor: string | undefined, 
     ...item,
     pendingRequestCount: Number(paginated.data[idx]?.pending_request_count || 0),
     isOwner: true,
+    matchPercentage: undefined,
+    match_percentage: undefined,
   }));
   return { ...paginated, data };
 };
@@ -498,4 +506,30 @@ export const getMyRequests = async (userId: string) => {
     [userId]
   );
   return rows;
+};
+
+export const getAllBoardsForEmbedding = async () => {
+  const { rows } = await query(`
+    SELECT bp.id, bp.group_id, g.creator_id, bp.title, bp.description, bp.roles_needed,
+           bp.slots_total, bp.slots_filled, bp.expires_at, bp.required_skill_ids, bp.required_interest_ids,
+           g.name as group_name
+    FROM board_postings bp
+    LEFT JOIN groups g ON bp.group_id = g.id
+    WHERE (bp.expires_at IS NULL OR bp.expires_at > NOW())
+      AND bp.slots_filled < bp.slots_total
+  `);
+  return hydrateBoardPostings(rows);
+};
+
+export const getBoardForEmbedding = async (postingId: string) => {
+  const { rows } = await query(`
+    SELECT bp.id, bp.group_id, g.creator_id, bp.title, bp.description, bp.roles_needed,
+           bp.slots_total, bp.slots_filled, bp.expires_at, bp.required_skill_ids, bp.required_interest_ids,
+           g.name as group_name
+    FROM board_postings bp
+    LEFT JOIN groups g ON bp.group_id = g.id
+    WHERE bp.id = $1
+  `, [postingId]);
+  const hydrated = await hydrateBoardPostings(rows);
+  return hydrated[0] || null;
 };

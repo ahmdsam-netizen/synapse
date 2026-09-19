@@ -1,4 +1,4 @@
-import { useInfiniteQuery, type QueryKey } from '@tanstack/react-query';
+import { useInfiniteQuery, type QueryKey, type InfiniteData } from '@tanstack/react-query';
 import { useInView } from 'react-intersection-observer';
 import { useEffect } from 'react';
 import type { PaginatedResponse } from '../types';
@@ -16,21 +16,16 @@ export function useInfiniteScroll<T>({
 }: UseInfiniteScrollOptions<T>) {
   const { ref, inView } = useInView({ threshold: 0, rootMargin: '200px' });
 
-  const query = useInfiniteQuery({
+  const query = useInfiniteQuery<PaginatedResponse<T>, Error, InfiniteData<PaginatedResponse<T>>, QueryKey, string | null>({
     queryKey,
     queryFn: ({ pageParam }) => queryFn(pageParam),
-    initialPageParam: null as string | null,
-    getNextPageParam: (lastPage) => lastPage.nextCursor,
+    initialPageParam: null,
+    getNextPageParam: (lastPage) => lastPage?.nextCursor ?? undefined,
     enabled,
   });
 
-  useEffect(() => {
-    if (inView && query.hasNextPage && !query.isFetchingNextPage) {
-      query.fetchNextPage();
-    }
-  }, [inView, query.hasNextPage, query.isFetchingNextPage, query.fetchNextPage]);
-
-  const allData = query.data?.pages.flatMap((page) => page.data) ?? [];
+  // No auto-trigger on scroll into view: user must click "Load More" button
+  const allData = query.data?.pages.flatMap((page) => page?.data ?? []) ?? [];
 
   return {
     data: allData,
@@ -40,6 +35,7 @@ export function useInfiniteScroll<T>({
     error: query.error,
     hasNextPage: query.hasNextPage,
     isFetchingNextPage: query.isFetchingNextPage,
+    fetchNextPage: query.fetchNextPage,
     sentinelRef: ref,
     refetch: query.refetch,
   };

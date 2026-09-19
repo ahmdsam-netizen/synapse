@@ -85,28 +85,32 @@ export default function RecommendationsPage() {
     refetch,
     hasNextPage,
     isFetchingNextPage,
+    fetchNextPage,
     sentinelRef
   } = useInfiniteScroll<RecommendedUser>({
     queryKey,
     enabled: queryEnabled,
     queryFn: async (cursor) => {
+      const normalizeRecs = (resData: any) => {
+        if (Array.isArray(resData)) return { data: resData, nextCursor: null };
+        if (Array.isArray(resData?.data?.data)) return { ...resData, data: resData.data.data, nextCursor: resData.data.nextCursor ?? null };
+        if (Array.isArray(resData?.data)) return resData;
+        return resData || { data: [], nextCursor: null };
+      };
+
       if (mode === 'similarity') {
         const res = await recommendationsApi.getSimilarity(cursor, 30);
-        setCurrentSource(res.data.source);
-        return res.data;
+        setCurrentSource(res.data?.source);
+        return normalizeRecs(res.data);
       }
       if (mode === 'second_degree') {
         const res = await recommendationsApi.getSecondDegree(cursor, 30);
-        setCurrentSource(res.data.source);
-        return res.data;
+        setCurrentSource(res.data?.source);
+        return normalizeRecs(res.data);
       }
       const res = await searchApi.searchUsers({ ...appliedFilters, q: appliedQuery }, cursor, 30);
       setCurrentSource(undefined);
-      const body = res.data as any;
-      if (body && body.data && Array.isArray(body.data.data)) {
-        return body.data;
-      }
-      return body;
+      return normalizeRecs(res.data);
     },
   });
 
@@ -238,7 +242,9 @@ export default function RecommendationsPage() {
           <InfiniteScrollLoader 
             ref={sentinelRef} 
             isFetchingNextPage={isFetchingNextPage} 
-            hasNextPage={hasNextPage} 
+            hasNextPage={hasNextPage}
+            onLoadMore={() => fetchNextPage()}
+            label="Load More Students"
           />
         )}
       </div>

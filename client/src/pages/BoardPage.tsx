@@ -30,18 +30,25 @@ export default function BoardPage() {
 
   const queryClient = useQueryClient();
 
+  const normalizePaginated = (resData: any) => {
+    if (Array.isArray(resData)) return { data: resData, nextCursor: null };
+    if (Array.isArray(resData?.data?.data)) return { data: resData.data.data, nextCursor: resData.data.nextCursor ?? null };
+    if (Array.isArray(resData?.data)) return { data: resData.data, nextCursor: resData.nextCursor ?? null };
+    return resData || { data: [], nextCursor: null };
+  };
+
   const {
     data: globalPostings,
     hasNextPage: hasNextGlobal,
     isFetchingNextPage: isFetchingNextGlobal,
     isLoading: isLoadingGlobal,
+    fetchNextPage: fetchNextGlobal,
     sentinelRef: globalRef,
   } = useInfiniteScroll<BoardPosting>({
     queryKey: ['board', 'global', filters],
     queryFn: async (cursor) => {
       const res = await boardsApi.getGlobal({ cursor, limit: 30, ...filters });
-      const body = res.data as any;
-      return body.data || body;
+      return normalizePaginated(res.data);
     },
   });
 
@@ -50,13 +57,13 @@ export default function BoardPage() {
     hasNextPage: hasNextCollege,
     isFetchingNextPage: isFetchingNextCollege,
     isLoading: isLoadingCollege,
+    fetchNextPage: fetchNextCollege,
     sentinelRef: collegeRef,
   } = useInfiniteScroll<BoardPosting>({
     queryKey: ['board', 'college', filters],
     queryFn: async (cursor) => {
       const res = await boardsApi.getCollege({ cursor, limit: 30, ...filters });
-      const body = res.data as any;
-      return body.data || body;
+      return normalizePaginated(res.data);
     },
   });
 
@@ -65,13 +72,13 @@ export default function BoardPage() {
     hasNextPage: hasNextMatched,
     isFetchingNextPage: isFetchingNextMatched,
     isLoading: isLoadingMatched,
+    fetchNextPage: fetchNextMatched,
     sentinelRef: matchedRef,
   } = useInfiniteScroll<BoardPosting>({
     queryKey: ['board', 'matched'],
     queryFn: async (cursor) => {
       const res = await boardsApi.getMatched(cursor, 30);
-      const body = res.data as any;
-      return body.data || body;
+      return normalizePaginated(res.data);
     },
   });
 
@@ -80,13 +87,13 @@ export default function BoardPage() {
     hasNextPage: hasNextMyPostings,
     isFetchingNextPage: isFetchingNextMyPostings,
     isLoading: isLoadingMyPostings,
+    fetchNextPage: fetchNextMyPostings,
     sentinelRef: myPostingsRef,
   } = useInfiniteScroll<BoardPosting>({
     queryKey: ['board', 'my-postings'],
     queryFn: async (cursor) => {
       const res = await boardsApi.getMyPostings({ cursor, limit: 30 });
-      const body = res.data as any;
-      return body.data || body;
+      return normalizePaginated(res.data);
     },
   });
 
@@ -124,7 +131,8 @@ export default function BoardPage() {
     ref: any,
     hasNextPage: boolean,
     isFetchingNextPage: boolean,
-    tabType: 'global' | 'college' | 'matched'
+    tabType: 'global' | 'college' | 'matched' | 'my-postings',
+    onLoadMore?: () => void
   ) => {
     if (postings.length === 0) {
       let emptyTitle = "No postings available";
@@ -154,6 +162,7 @@ export default function BoardPage() {
               posting={posting}
               onRequestClick={() => handleRequestClick(posting)}
               isMatchedTab={tabType === 'matched'}
+              isMyPost={tabType === 'my-postings'}
             />
           ))}
         </div>
@@ -161,6 +170,8 @@ export default function BoardPage() {
           ref={ref}
           hasNextPage={hasNextPage}
           isFetchingNextPage={isFetchingNextPage}
+          onLoadMore={onLoadMore}
+          label="Load More Postings"
         />
       </div>
     );
@@ -277,7 +288,7 @@ export default function BoardPage() {
                 ))}
               </div>
             ) : (
-              renderPostings(globalPostings, globalRef, hasNextGlobal, isFetchingNextGlobal, 'global')
+              renderPostings(globalPostings, globalRef, hasNextGlobal, isFetchingNextGlobal, 'global', () => fetchNextGlobal())
             )}
           </TabPanel>
           <TabPanel>
@@ -288,7 +299,7 @@ export default function BoardPage() {
                 ))}
               </div>
             ) : (
-              renderPostings(collegePostings, collegeRef, hasNextCollege, isFetchingNextCollege, 'college')
+              renderPostings(collegePostings, collegeRef, hasNextCollege, isFetchingNextCollege, 'college', () => fetchNextCollege())
             )}
           </TabPanel>
           <TabPanel>
@@ -299,7 +310,7 @@ export default function BoardPage() {
                 ))}
               </div>
             ) : (
-              renderPostings(matchedPostings, matchedRef, hasNextMatched, isFetchingNextMatched, 'matched')
+              renderPostings(matchedPostings, matchedRef, hasNextMatched, isFetchingNextMatched, 'matched', () => fetchNextMatched())
             )}
           </TabPanel>
           <TabPanel>
@@ -362,6 +373,8 @@ export default function BoardPage() {
                     ref={myPostingsRef}
                     hasNextPage={hasNextMyPostings}
                     isFetchingNextPage={isFetchingNextMyPostings}
+                    onLoadMore={() => fetchNextMyPostings()}
+                    label="Load More Postings"
                   />
                 </div>
               )

@@ -6,7 +6,7 @@ import { connectionsApi } from '../../api/connections';
 import { getInitials, cn } from '../../lib/utils';
 import { TagChip } from './TagChip';
 import toast from 'react-hot-toast';
-import { UserPlusIcon, CheckIcon } from '@heroicons/react/24/outline';
+import { UserPlusIcon, CheckIcon, SparklesIcon } from '@heroicons/react/24/outline';
 
 interface UserCardProps {
   user: RecommendedUser;
@@ -40,6 +40,17 @@ export function UserCard({ user, mode, onConnect }: UserCardProps) {
     }
   };
 
+  const rawPct = user.matchPercentage ?? (user as any).match_percentage;
+  const matchPct = rawPct !== undefined && rawPct !== null
+    ? Math.round(rawPct)
+    : user.similarity_score !== undefined
+      ? Math.round(user.similarity_score * 100)
+      : (user as any).similarityScore !== undefined
+        ? Math.round((user as any).similarityScore * 100)
+        : user.matchScore !== undefined
+          ? Math.round(user.matchScore * 100)
+          : undefined;
+
   const displaySkills = user.skills || (user as any).allSkills || (user as any).all_skills || [];
   const college = user.collegeName || (user as any).college_name || (user as any).college?.name || 'Campus Connect Member';
   const year = user.yearOfStudy || user.year || (user as any).year_of_study || '1';
@@ -47,28 +58,37 @@ export function UserCard({ user, mode, onConnect }: UserCardProps) {
   return (
     <div className="flex flex-col bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow h-full">
       <Link to={`/profile/${user.id}`} className="flex-1 p-5 flex flex-col group cursor-pointer block">
-        <div className="flex items-start justify-between mb-4">
-          <div className="flex items-center space-x-3">
+        <div className="flex items-start justify-between gap-2 mb-4">
+          <div className="flex items-center space-x-3 min-w-0">
             {user.avatarUrl ? (
               <img 
                 src={user.avatarUrl} 
                 alt={user.name} 
-                className="w-12 h-12 rounded-full object-cover ring-2 ring-gray-100"
+                className="w-12 h-12 rounded-full object-cover ring-2 ring-gray-100 shrink-0"
               />
             ) : (
-              <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary-500 to-primary-700 flex items-center justify-center text-white font-medium text-lg ring-2 ring-gray-100">
+              <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary-500 to-primary-700 flex items-center justify-center text-white font-medium text-lg ring-2 ring-gray-100 shrink-0">
                 {getInitials(user.name)}
               </div>
             )}
-            <div>
-              <h3 className="font-semibold text-gray-900 text-base group-hover:text-primary-600 transition-colors">
+            <div className="min-w-0">
+              <h3 className="font-semibold text-gray-900 text-base group-hover:text-primary-600 transition-colors truncate">
                 {user.name}
               </h3>
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-gray-500 truncate">
                 {college} • Year {year}
               </p>
             </div>
           </div>
+          {mode !== 'second_degree' && matchPct !== undefined && (
+            <div 
+              className="inline-flex items-center gap-1 shrink-0 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 border border-emerald-200 shadow-2xs"
+              title={`${matchPct}% Compatibility Match`}
+            >
+              <SparklesIcon className="w-3.5 h-3.5 text-emerald-600" />
+              <span>{matchPct}% Match</span>
+            </div>
+          )}
         </div>
 
         {user.lookingFor && (

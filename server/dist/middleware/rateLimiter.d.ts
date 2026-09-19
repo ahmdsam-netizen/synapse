@@ -1,6 +1,8 @@
-export declare const signupLimiter: import("express-rate-limit").RateLimitRequestHandler;
-export declare const connectionRequestLimiter: import("express-rate-limit").RateLimitRequestHandler;
-export declare const joinRequestLimiter: import("express-rate-limit").RateLimitRequestHandler;
-export declare const searchLimiter: import("express-rate-limit").RateLimitRequestHandler;
-export declare const generalLimiter: import("express-rate-limit").RateLimitRequestHandler;
+declare const passThrough: (_req: any, _res: any, next: any) => any;
+export declare const signupLimiter: typeof passThrough;
+export declare const connectionRequestLimiter: typeof passThrough;
+export declare const joinRequestLimiter: typeof passThrough;
+export declare const searchLimiter: typeof passThrough;
+export declare const generalLimiter: typeof passThrough;
+export {};
 //# sourceMappingURL=rateLimiter.d.ts.map

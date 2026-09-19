@@ -30,17 +30,34 @@ services:
       timeout: 3s
       retries: 5
 
-  server:
+  vectordb:
+    image: pgvector/pgvector:pg16
+    container_name: synapse-vectordb
+    ports:
+      - '5433:5432'
+    environment:
+      POSTGRES_USER: ${VECTOR_POSTGRES_USER:-synapse}
+      POSTGRES_PASSWORD: ${VECTOR_POSTGRES_PASSWORD:-synapse_dev}
+      POSTGRES_DB: ${VECTOR_POSTGRES_DB:-synapse_vectors}
+    volumes:
+      - vector_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U synapse -d synapse_vectors']
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  core-service:
     build:
       context: ./server
       dockerfile: Dockerfile
-    container_name: synapse-server
+    container_name: synapse-core-service
     ports:
-      - '3001:3001'
+      - '4000:4000'
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgresql://synapse:synapse_dev@postgres:5432/synapse}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
-      PORT: 3001
+      PORT: 4000
       NODE_ENV: ${NODE_ENV:-development}
       CLIENT_URL: ${CLIENT_URL:-http://localhost:5173}
       JWT_SECRET: ${JWT_SECRET:-super-secret-jwt-key-minimum-32-characters-dev-key}
@@ -57,6 +74,49 @@ services:
       - /app/node_modules
     command: sh -c "npm run migrate && npm run seed && npm run dev"
 
+  recommendation-service:
+    build:
+      context: ./recommendation-service
+      dockerfile: Dockerfile
+    container_name: synapse-recommendation-service
+    ports:
+      - '5001:5000'
+    environment:
+      PORT: 5000
+      CORE_SERVICE_URL: http://core-service:4000
+      VECTOR_DATABASE_URL: postgresql://synapse:synapse_dev@vectordb:5432/synapse_vectors
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+    depends_on:
+      vectordb:
+        condition: service_healthy
+      core-service:
+        condition: service_started
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./recommendation-service:/app
+
+  gateway:
+    build:
+      context: ./gateway
+      dockerfile: Dockerfile
+    container_name: synapse-gateway
+    ports:
+      - '3001:3001'
+    environment:
+      PORT: 3001
+      CORE_SERVICE_URL: http://core-service:4000
+      REC_SERVICE_URL: http://recommendation-service:5000
+      CLIENT_URL: ${CLIENT_URL:-http://localhost:5173}
+      JWT_SECRET: ${JWT_SECRET:-super-secret-jwt-key-minimum-32-characters-dev-key}
+    depends_on:
+      - core-service
+      - recommendation-service
+    volumes:
+      - ./gateway:/app
+      - /app/node_modules
+    command: npm run dev
+
   worker:
     build:
       context: ./server
@@ -65,7 +125,7 @@ services:
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgresql://synapse:synapse_dev@postgres:5432/synapse}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
-      PORT: 3001
+      PORT: 4000
       NODE_ENV: ${NODE_ENV:-development}
       CLIENT_URL: ${CLIENT_URL:-http://localhost:5173}
       JWT_SECRET: ${JWT_SECRET:-super-secret-jwt-key-minimum-32-characters-dev-key}
@@ -75,7 +135,7 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      server:
+      core-service:
         condition: service_started
     volumes:
       - ./server:/app
@@ -90,9 +150,9 @@ services:
     ports:
       - '5173:5173'
     environment:
-      VITE_API_URL: http://server:3001
+      VITE_API_URL: http://gateway:3001
     depends_on:
-      - server
+      - gateway
     volumes:
       - ./client:/app
       - /app/node_modules
@@ -100,3 +160,4 @@ services:
 volumes:
   pgdata:
   redisdata:
+  vector_pgdata:

@@ -79,6 +79,10 @@ export interface RecommendedUser {
   skills: UserSkill[];
   sameCollege?: boolean;
   matchScore?: number;
+  matchPercentage?: number;
+  match_percentage?: number;
+  similarity_score?: number;
+  similarityScore?: number;
   source?: string;
   year?: number | null;
   viaConnectionName?: string;
@@ -103,6 +107,8 @@ export interface BoardPosting {
   id: string;
   groupId: string;
   groupName: string;
+  creatorId?: string;
+  creator_id?: string;
   boardType: 'global' | 'matched';
   title: string;
   description: string | null;
@@ -120,6 +126,11 @@ export interface BoardPosting {
   hasRequested?: boolean;
   expiresAt?: string | null;
   expires_at?: string | null;
+  matchPercentage?: number;
+  match_percentage?: number;
+  semantic_match_score?: number;
+  semanticMatchScore?: number;
+  matchScore?: number;
 }
 
 export interface JoinRequest {

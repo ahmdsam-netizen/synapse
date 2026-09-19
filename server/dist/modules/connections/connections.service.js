@@ -237,4 +237,39 @@ export async function getMutualConnections(userId, otherUserId, cursor, limit) {
         id: row.id,
     }));
 }
+export async function getConnectedUserIds(userId) {
+    const res = await query(`
+    SELECT receiver_id as friend_id FROM connections WHERE requester_id = $1 AND status = 'accepted'
+    UNION
+    SELECT requester_id as friend_id FROM connections WHERE receiver_id = $1 AND status = 'accepted'
+  `, [userId]);
+    return res.rows.map((r) => r.friend_id);
+}
+export async function getSecondDegreeCandidates(userId, limit = 60, offset = 0) {
+    const res = await query(`
+    SELECT 
+      ce2.friend_id AS candidate_id, 
+      count(distinct ce1.friend_id)::int AS mutual_count,
+      min(ce1.friend_id::text) AS via_connection_id,
+      COALESCE((SELECT name FROM users WHERE id = min(ce1.friend_id::text)::uuid), 'A mutual connection') AS via_connection_name
+    FROM connection_edges ce1
+    JOIN connection_edges ce2 ON ce1.friend_id = ce2.user_id
+    WHERE ce1.user_id = $1
+      AND ce2.friend_id != $1
+      AND NOT EXISTS (
+        SELECT 1 FROM connection_edges direct 
+        WHERE direct.user_id = $1 
+          AND direct.friend_id = ce2.friend_id
+      )
+      AND NOT EXISTS (
+        SELECT 1 FROM user_blocks ub
+        WHERE (ub.blocker_id = $1 AND ub.blocked_id = ce2.friend_id)
+           OR (ub.blocker_id = ce2.friend_id AND ub.blocked_id = $1)
+      )
+    GROUP BY ce2.friend_id
+    ORDER BY mutual_count DESC, ce2.friend_id ASC
+    LIMIT $2 OFFSET $3;
+  `, [userId, limit, offset]);
+    return res.rows;
+}
 //# sourceMappingURL=connections.service.js.map

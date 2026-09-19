@@ -24,8 +24,16 @@ export default function HomePage() {
     queryFn: () => boardsApi.getMyRequests(),
   });
 
-  const groups: Group[] = (groupsData?.data as any)?.data || groupsData?.data || [];
-  const requests: JoinRequest[] = (requestsData?.data as any)?.data || requestsData?.data || [];
+  const groups: Group[] = Array.isArray((groupsData?.data as any)?.data)
+    ? (groupsData?.data as any).data
+    : Array.isArray(groupsData?.data)
+      ? (groupsData?.data as any)
+      : [];
+  const requests: JoinRequest[] = Array.isArray((requestsData?.data as any)?.data)
+    ? (requestsData?.data as any).data
+    : Array.isArray(requestsData?.data)
+      ? (requestsData?.data as any)
+      : [];
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">

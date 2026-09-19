@@ -27,4 +27,11 @@ export declare function listPending(userId: string): Promise<{
     branch: any;
 }[]>;
 export declare function getMutualConnections(userId: string, otherUserId: string, cursor: string | null, limit: number): Promise<PaginationResult<any>>;
+export declare function getConnectedUserIds(userId: string): Promise<string[]>;
+export declare function getSecondDegreeCandidates(userId: string, limit?: number, offset?: number): Promise<Array<{
+    candidate_id: string;
+    mutual_count: number;
+    via_connection_id: string;
+    via_connection_name: string;
+}>>;
 //# sourceMappingURL=connections.service.d.ts.map

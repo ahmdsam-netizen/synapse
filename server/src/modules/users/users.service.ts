@@ -336,3 +336,26 @@ export async function searchInterests(q: string) {
   );
   return res.rows;
 }
+
+export async function getAllUsersForEmbedding() {
+  const usersRes = await query(`
+    SELECT u.id, u.name, u.avatar_url, u.bio, u.year_of_study, u.branch, u.looking_for, c.name as college_name,
+      COALESCE((SELECT json_agg(s.name) FROM user_skills us JOIN skills s ON us.skill_id = s.id WHERE us.user_id = u.id), '[]'::json) as skills,
+      COALESCE((SELECT json_agg(i.name) FROM user_interests ui JOIN interests i ON ui.interest_id = i.id WHERE ui.user_id = u.id), '[]'::json) as interests
+    FROM users u
+    LEFT JOIN colleges c ON u.college_id = c.id
+  `);
+  return usersRes.rows;
+}
+
+export async function getUserForEmbedding(userId: string) {
+  const userRes = await query(`
+    SELECT u.id, u.name, u.avatar_url, u.bio, u.year_of_study, u.branch, u.looking_for, c.name as college_name,
+      COALESCE((SELECT json_agg(s.name) FROM user_skills us JOIN skills s ON us.skill_id = s.id WHERE us.user_id = u.id), '[]'::json) as skills,
+      COALESCE((SELECT json_agg(i.name) FROM user_interests ui JOIN interests i ON ui.interest_id = i.id WHERE ui.user_id = u.id), '[]'::json) as interests
+    FROM users u
+    LEFT JOIN colleges c ON u.college_id = c.id
+    WHERE u.id = $1
+  `, [userId]);
+  return userRes.rows[0] || null;
+}

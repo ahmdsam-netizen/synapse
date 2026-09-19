@@ -4,7 +4,6 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import { env } from './config/env.js';
 import { errorHandler } from './middleware/errorHandler.js';
-import { generalLimiter } from './middleware/rateLimiter.js';
 import authRoutes from './modules/auth/auth.routes.js';
 import userRoutes from './modules/users/users.routes.js';
 import connectionRoutes from './modules/connections/connections.routes.js';
@@ -19,7 +18,6 @@ app.use(helmet());
 app.use(cors({ origin: env.CLIENT_URL, credentials: true }));
 app.use(express.json({ limit: '10mb' }));
 app.use(morgan(env.NODE_ENV === 'production' ? 'combined' : 'dev'));
-app.use(generalLimiter);
 // Health check
 app.get('/api/health', (_req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
@@ -32,6 +30,69 @@ app.use('/api/recommendations', recommendationRoutes);
 app.use('/api/search', searchRoutes);
 app.use('/api/groups', groupRoutes);
 app.use('/api/boards', boardRoutes);
+// Internal microservice communication endpoints for Recommendation Service
+app.get('/api/internal/users-data', async (_req, res, next) => {
+    try {
+        const { getAllUsersForEmbedding } = await import('./modules/users/users.service.js');
+        const users = await getAllUsersForEmbedding();
+        res.json({ data: users });
+    }
+    catch (err) {
+        next(err);
+    }
+});
+app.get('/api/internal/users-data/:id', async (req, res, next) => {
+    try {
+        const { getUserForEmbedding } = await import('./modules/users/users.service.js');
+        const user = await getUserForEmbedding(req.params.id);
+        res.json({ data: user });
+    }
+    catch (err) {
+        next(err);
+    }
+});
+app.get('/api/internal/boards-data', async (_req, res, next) => {
+    try {
+        const { getAllBoardsForEmbedding } = await import('./modules/boards/boards.service.js');
+        const boards = await getAllBoardsForEmbedding();
+        res.json({ data: boards });
+    }
+    catch (err) {
+        next(err);
+    }
+});
+app.get('/api/internal/boards-data/:id', async (req, res, next) => {
+    try {
+        const { getBoardForEmbedding } = await import('./modules/boards/boards.service.js');
+        const board = await getBoardForEmbedding(req.params.id);
+        res.json({ data: board });
+    }
+    catch (err) {
+        next(err);
+    }
+});
+app.get('/api/internal/connections/:userId', async (req, res, next) => {
+    try {
+        const { getConnectedUserIds } = await import('./modules/connections/connections.service.js');
+        const ids = await getConnectedUserIds(req.params.userId);
+        res.json({ data: ids });
+    }
+    catch (err) {
+        next(err);
+    }
+});
+app.get('/api/internal/second-degree-candidates/:userId', async (req, res, next) => {
+    try {
+        const { getSecondDegreeCandidates } = await import('./modules/connections/connections.service.js');
+        const limit = parseInt(req.query.limit, 10) || 60;
+        const offset = parseInt(req.query.offset, 10) || 0;
+        const candidates = await getSecondDegreeCandidates(req.params.userId, limit, offset);
+        res.json({ data: candidates });
+    }
+    catch (err) {
+        next(err);
+    }
+});
 // Error handler (must be last)
 app.use(errorHandler);
 // Ensure board_postings has expires_at column and index

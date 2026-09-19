@@ -88,6 +88,14 @@ async function seed() {
     await client.query(sql);
     console.log('✓ Taxonomy loaded');
 
+    // Check if database is already seeded
+    const userCountRes = await client.query('SELECT count(*) FROM users');
+    const existingCount = parseInt(userCountRes.rows[0].count, 10);
+    if (existingCount > 0 && process.env.FORCE_SEED !== 'true') {
+      console.log(`✓ Database already seeded with ${existingCount} users. Skipping truncation & re-seed to preserve user sessions.`);
+      return;
+    }
+
     // Clean existing data for a fresh, clean graph
     console.log('Cleaning existing relations...');
     await client.query(`

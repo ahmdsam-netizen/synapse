@@ -1,8 +1,9 @@
 import React from 'react';
-import { TrashIcon, ClockIcon } from '@heroicons/react/24/outline';
+import { TrashIcon, ClockIcon, SparklesIcon } from '@heroicons/react/24/outline';
 import { BoardPosting } from '../../types';
 import { TagChip } from './TagChip';
 import { cn, formatTimeRemaining } from '../../lib/utils';
+import { useAuth } from '../../context/AuthContext';
 
 interface PostingCardProps {
   posting: BoardPosting & { hasRequested?: boolean; isOwner?: boolean; pendingRequestCount?: number };
@@ -19,6 +20,9 @@ export function PostingCard({
   isMatchedTab = false,
   isMyPost = false,
 }: PostingCardProps) {
+  const { user: currentUser } = useAuth();
+  const isSelfPost = isMyPost || Boolean(posting.isOwner) || (Boolean(currentUser?.id) && (posting.creatorId === currentUser?.id || (posting as any).creator_id === currentUser?.id));
+
   const groupName = posting.groupName || (posting as any).group_name || 'Group';
   const rolesNeeded = posting.rolesNeeded || (posting as any).roles_needed || [];
   const requiredSkills = posting.requiredSkills || (posting as any).required_skills || [];
@@ -28,6 +32,17 @@ export function PostingCard({
   const hasRequested = posting.hasRequested ?? (posting as any).has_requested ?? false;
   const expiresAt = posting.expiresAt || (posting as any).expires_at;
   const timeRemaining = formatTimeRemaining(expiresAt);
+
+  const rawPct = posting.matchPercentage ?? (posting as any).match_percentage;
+  const matchPct = rawPct !== undefined && rawPct !== null
+    ? Math.round(rawPct)
+    : posting.semantic_match_score !== undefined
+      ? Math.round(posting.semantic_match_score * 100)
+      : (posting as any).semanticMatchScore !== undefined
+        ? Math.round((posting as any).semanticMatchScore * 100)
+        : posting.matchScore !== undefined
+          ? Math.round(posting.matchScore * 100)
+          : undefined;
   
   const matchedSkills = isMatchedTab && ((posting as any).matchedSkills || (posting as any).matched_skills) 
     ? ((posting as any).matchedSkills || (posting as any).matched_skills) 
@@ -45,6 +60,15 @@ export function PostingCard({
         <div>
           <div className="flex items-center flex-wrap gap-2 mb-1">
             <p className="text-xs font-medium text-gray-500">{groupName}</p>
+            {!isSelfPost && matchPct !== undefined && (
+              <span 
+                className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700 border border-emerald-200 shadow-2xs"
+                title={`${matchPct}% Compatibility Match`}
+              >
+                <SparklesIcon className="h-3 w-3 text-emerald-600" />
+                <span>{matchPct}% Match</span>
+              </span>
+            )}
             {timeRemaining && (
               <span className="inline-flex items-center gap-1 rounded-full bg-orange-50 px-2 py-0.5 text-[11px] font-medium text-orange-700 border border-orange-200">
                 <ClockIcon className="h-3 w-3" />
