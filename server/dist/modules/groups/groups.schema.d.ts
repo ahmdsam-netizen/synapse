@@ -28,4 +28,11 @@ export declare const removeMemberParamSchema: z.ZodObject<{
     id: z.ZodString;
     userId: z.ZodString;
 }, z.core.$strip>;
+export declare const inviteUserSchema: z.ZodObject<{
+    userId: z.ZodString;
+    note: z.ZodOptional<z.ZodString>;
+}, z.core.$strip>;
+export declare const inviteIdParamSchema: z.ZodObject<{
+    inviteId: z.ZodString;
+}, z.core.$strip>;
 //# sourceMappingURL=groups.schema.d.ts.map

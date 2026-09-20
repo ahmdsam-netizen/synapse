@@ -118,7 +118,7 @@ export async function declineConnection(connectionId: string, userId: string) {
 export async function removeConnection(connectionIdOrFriendId: string, userId: string) {
   const connRes = await query(
     `SELECT * FROM connections
-     WHERE status = 'accepted'
+     WHERE (status = 'accepted' OR status = 'pending')
        AND (requester_id = $2 OR receiver_id = $2)
        AND (
          id = $1
@@ -143,20 +143,24 @@ export async function removeConnection(connectionIdOrFriendId: string, userId: s
 
     await client.query('DELETE FROM connections WHERE id = $1', [conn.id]);
 
-    await client.query(
-      `DELETE FROM connection_edges 
-       WHERE (user_id = $1 AND friend_id = $2) 
-          OR (user_id = $2 AND friend_id = $1)`,
-      [requesterId, receiverId]
-    );
+    if (conn.status === 'accepted') {
+      await client.query(
+        `DELETE FROM connection_edges 
+         WHERE (user_id = $1 AND friend_id = $2) 
+            OR (user_id = $2 AND friend_id = $1)`,
+        [requesterId, receiverId]
+      );
+    }
 
     await client.query('COMMIT');
 
-    try {
-      await recommendationQueue.add('computeSecondDegree', { userId: requesterId });
-      await recommendationQueue.add('computeSecondDegree', { userId: receiverId });
-    } catch (qErr) {
-      console.error('Failed to enqueue recommendation job on remove:', qErr);
+    if (conn.status === 'accepted') {
+      try {
+        await recommendationQueue.add('computeSecondDegree', { userId: requesterId });
+        await recommendationQueue.add('computeSecondDegree', { userId: receiverId });
+      } catch (qErr) {
+        console.error('Failed to enqueue recommendation job on remove:', qErr);
+      }
     }
 
     return { removed: true };
@@ -245,12 +249,14 @@ export async function listConnections(userId: string, cursor: string | null, lim
 
 export async function listPending(userId: string) {
   const res = await query(
-    `SELECT c.*, u.name, u.avatar_url, u.bio, u.college_id, u.year_of_study, u.branch,
+    `SELECT c.id, c.requester_id, c.receiver_id, c.status, c.created_at,
+            CASE WHEN c.receiver_id = $1 THEN 'received' ELSE 'sent' END as direction,
+            u.id as user_id, u.name, u.avatar_url, u.bio, u.college_id, u.year_of_study, u.branch,
             col.name as college_name
      FROM connections c
-     JOIN users u ON u.id = c.requester_id
+     JOIN users u ON u.id = (CASE WHEN c.receiver_id = $1 THEN c.requester_id ELSE c.receiver_id END)
      LEFT JOIN colleges col ON col.id = u.college_id
-     WHERE c.receiver_id = $1 AND c.status = 'pending'
+     WHERE (c.receiver_id = $1 OR c.requester_id = $1) AND c.status = 'pending'
      ORDER BY c.created_at DESC`,
     [userId]
   );
@@ -260,9 +266,11 @@ export async function listPending(userId: string) {
     requester_id: r.requester_id,
     receiverId: r.receiver_id,
     receiver_id: r.receiver_id,
+    direction: r.direction,
     status: r.status,
     createdAt: r.created_at,
     created_at: r.created_at,
+    userId: r.user_id,
     name: r.name,
     avatarUrl: r.avatar_url,
     avatar_url: r.avatar_url,

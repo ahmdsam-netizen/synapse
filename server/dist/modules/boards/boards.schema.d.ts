@@ -3,6 +3,11 @@ export declare const createPostingSchema: z.ZodObject<{
     groupId: z.ZodString;
     title: z.ZodString;
     description: z.ZodOptional<z.ZodString>;
+    community: z.ZodDefault<z.ZodOptional<z.ZodEnum<{
+        competition: "competition";
+        hackathon: "hackathon";
+        project: "project";
+    }>>>;
     rolesNeeded: z.ZodDefault<z.ZodOptional<z.ZodArray<z.ZodString>>>;
     requiredSkillIds: z.ZodDefault<z.ZodOptional<z.ZodArray<z.ZodString>>>;
     requiredInterestIds: z.ZodDefault<z.ZodOptional<z.ZodArray<z.ZodString>>>;
@@ -12,6 +17,11 @@ export declare const createPostingSchema: z.ZodObject<{
 export declare const updatePostingSchema: z.ZodObject<{
     title: z.ZodOptional<z.ZodString>;
     description: z.ZodOptional<z.ZodString>;
+    community: z.ZodOptional<z.ZodEnum<{
+        competition: "competition";
+        hackathon: "hackathon";
+        project: "project";
+    }>>;
     rolesNeeded: z.ZodOptional<z.ZodArray<z.ZodString>>;
     requiredSkillIds: z.ZodOptional<z.ZodArray<z.ZodString>>;
     requiredInterestIds: z.ZodOptional<z.ZodArray<z.ZodString>>;
@@ -24,6 +34,7 @@ export declare const postingIdParamSchema: z.ZodObject<{
 export declare const globalBoardQuerySchema: z.ZodObject<{
     cursor: z.ZodOptional<z.ZodString>;
     limit: z.ZodDefault<z.ZodOptional<z.ZodCoercedNumber<unknown>>>;
+    community: z.ZodOptional<z.ZodString>;
     skills: z.ZodDefault<z.ZodOptional<z.ZodUnion<readonly [z.ZodArray<z.ZodString>, z.ZodPipe<z.ZodString, z.ZodTransform<string[], string>>]>>>;
     interests: z.ZodDefault<z.ZodOptional<z.ZodUnion<readonly [z.ZodArray<z.ZodString>, z.ZodPipe<z.ZodString, z.ZodTransform<string[], string>>]>>>;
     collegeId: z.ZodOptional<z.ZodString>;
@@ -32,6 +43,7 @@ export declare const globalBoardQuerySchema: z.ZodObject<{
 export declare const matchedBoardQuerySchema: z.ZodObject<{
     cursor: z.ZodOptional<z.ZodString>;
     limit: z.ZodDefault<z.ZodOptional<z.ZodCoercedNumber<unknown>>>;
+    community: z.ZodOptional<z.ZodString>;
 }, z.core.$strip>;
 export declare const joinRequestSchema: z.ZodObject<{
     message: z.ZodOptional<z.ZodString>;

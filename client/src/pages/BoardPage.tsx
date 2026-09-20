@@ -1,11 +1,12 @@
 import { useState, useMemo } from 'react';
 import { TabGroup, TabList, Tab, TabPanels, TabPanel } from '@headlessui/react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { MagnifyingGlassIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import { useInfiniteScroll } from '../hooks/useInfiniteScroll';
 import { boardsApi } from '../api/boards';
+import { groupsApi } from '../api/groups';
 import { PostingCard } from '../components/shared/PostingCard';
+import { PostingDetailView } from '../components/board/PostingDetailView';
 import { EmptyState } from '../components/shared/EmptyState';
 import { InfiniteScrollLoader } from '../components/shared/InfiniteScrollLoader';
 import { JoinRequestModal } from '../components/board/JoinRequestModal';
@@ -17,16 +18,19 @@ import { cn, timeAgo } from '../lib/utils';
 export default function BoardPage() {
   const [selectedTabIndex, setSelectedTabIndex] = useState(0);
   const [selectedPosting, setSelectedPosting] = useState<BoardPosting | null>(null);
+  const [viewingPosting, setViewingPosting] = useState<BoardPosting | null>(null);
   const [isJoinModalOpen, setIsJoinModalOpen] = useState(false);
   const [isCreatePostingOpen, setIsCreatePostingOpen] = useState(false);
   const [myPostsSubView, setMyPostsSubView] = useState<'created' | 'requests'>('created');
   const [boardSearch, setBoardSearch] = useState('');
   const [selectedSkill, setSelectedSkill] = useState('');
+  const [selectedCommunity, setSelectedCommunity] = useState<'project' | 'hackathon' | 'competition'>('project');
 
   const filters = useMemo(() => ({
     q: boardSearch.trim() || undefined,
     skills: selectedSkill ? [selectedSkill] : undefined,
-  }), [boardSearch, selectedSkill]);
+    community: selectedCommunity,
+  }), [boardSearch, selectedSkill, selectedCommunity]);
 
   const queryClient = useQueryClient();
 
@@ -67,20 +71,6 @@ export default function BoardPage() {
     },
   });
 
-  const {
-    data: matchedPostings,
-    hasNextPage: hasNextMatched,
-    isFetchingNextPage: isFetchingNextMatched,
-    isLoading: isLoadingMatched,
-    fetchNextPage: fetchNextMatched,
-    sentinelRef: matchedRef,
-  } = useInfiniteScroll<BoardPosting>({
-    queryKey: ['board', 'matched'],
-    queryFn: async (cursor) => {
-      const res = await boardsApi.getMatched(cursor, 30);
-      return normalizePaginated(res.data);
-    },
-  });
 
   const {
     data: myPostings,
@@ -90,9 +80,9 @@ export default function BoardPage() {
     fetchNextPage: fetchNextMyPostings,
     sentinelRef: myPostingsRef,
   } = useInfiniteScroll<BoardPosting>({
-    queryKey: ['board', 'my-postings'],
+    queryKey: ['board', 'my-postings', selectedCommunity],
     queryFn: async (cursor) => {
-      const res = await boardsApi.getMyPostings({ cursor, limit: 30 });
+      const res = await boardsApi.getMyPostings({ cursor, limit: 30, community: selectedCommunity });
       return normalizePaginated(res.data);
     },
   });
@@ -103,6 +93,13 @@ export default function BoardPage() {
   });
 
   const myRequests: JoinRequest[] = (myRequestsData?.data as any)?.data || myRequestsData?.data || [];
+
+  const { data: myGroupsData } = useQuery({
+    queryKey: ['groups', 'me'],
+    queryFn: () => groupsApi.getMyGroups(),
+  });
+  const myGroups: any[] = (myGroupsData?.data as any)?.data || myGroupsData?.data || [];
+  const isAdminOfAnyGroup = myGroups.some((g: any) => g.userRole === 'admin' || g.role === 'admin');
 
   const deletePostingMutation = useMutation({
     mutationFn: (postingId: string) => boardsApi.deletePosting(postingId),
@@ -126,22 +123,28 @@ export default function BoardPage() {
     setIsJoinModalOpen(true);
   };
 
+  const filterByCommunity = (list: BoardPosting[]) => {
+    return list.filter((p) => {
+      const comm = ((p.community || (p as any).community || 'project') as string).toLowerCase();
+      return comm === selectedCommunity;
+    });
+  };
+
   const renderPostings = (
     postings: BoardPosting[],
     ref: any,
     hasNextPage: boolean,
     isFetchingNextPage: boolean,
-    tabType: 'global' | 'college' | 'matched' | 'my-postings',
+    tabType: 'global' | 'college' | 'my-postings',
     onLoadMore?: () => void
   ) => {
-    if (postings.length === 0) {
-      let emptyTitle = "No postings available";
-      let emptyDesc = "Check back later or create your own group posting.";
-      if (tabType === 'matched') {
-        emptyTitle = "No matching postings found";
-        emptyDesc = "Update your profile skills and interests to get matched with relevant groups.";
-      } else if (tabType === 'college') {
-        emptyTitle = "No postings from your college";
+    const filtered = filterByCommunity(postings);
+
+    if (filtered.length === 0) {
+      let emptyTitle = `No #${selectedCommunity} postings available`;
+      let emptyDesc = `There are currently no #${selectedCommunity} postings in this view. Try selecting another community or create a new posting.`;
+      if (tabType === 'college') {
+        emptyTitle = `No #${selectedCommunity} postings from your college`;
         emptyDesc = "Be the first in your college to create a group and posting!";
       }
 
@@ -155,13 +158,12 @@ export default function BoardPage() {
 
     return (
       <div className="flex flex-col gap-6 pb-12">
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3">
-          {postings.map((posting: BoardPosting) => (
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          {filtered.map((posting: BoardPosting) => (
             <PostingCard
               key={posting.id}
               posting={posting}
-              onRequestClick={() => handleRequestClick(posting)}
-              isMatchedTab={tabType === 'matched'}
+              onClick={() => setViewingPosting(posting)}
               isMyPost={tabType === 'my-postings'}
             />
           ))}
@@ -177,20 +179,55 @@ export default function BoardPage() {
     );
   };
 
+  if (viewingPosting) {
+    return (
+      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+        <PostingDetailView
+          posting={viewingPosting}
+          onBack={() => setViewingPosting(null)}
+          onRequestClick={() => {
+            setSelectedPosting(viewingPosting);
+            setIsJoinModalOpen(true);
+          }}
+          onDeleteClick={() => {
+            handleDeletePosting(viewingPosting.id);
+            setViewingPosting(null);
+          }}
+        />
+
+        {selectedPosting && (
+          <JoinRequestModal
+            open={isJoinModalOpen}
+            onClose={() => {
+              setIsJoinModalOpen(false);
+              setTimeout(() => setSelectedPosting(null), 300);
+            }}
+            onSuccess={() => {
+              setViewingPosting((prev) => (prev ? { ...prev, hasRequested: true } : null));
+            }}
+            posting={selectedPosting}
+          />
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
       <div className="mb-8 flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Board</h1>
+          <h1 className="text-2xl font-bold text-gray-900">#board</h1>
           <p className="mt-1 text-sm text-gray-500">Discover groups and collaborate with peers</p>
         </div>
         <div>
-          <button
-            onClick={() => setIsCreatePostingOpen(true)}
-            className="inline-flex items-center justify-center rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
-          >
-            Create Posting
-          </button>
+          {isAdminOfAnyGroup && (
+            <button
+              onClick={() => setIsCreatePostingOpen(true)}
+              className="inline-flex items-center justify-center rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+            >
+              Create Posting
+            </button>
+          )}
         </div>
       </div>
 
@@ -199,85 +236,48 @@ export default function BoardPage() {
           <Tab
             className="w-full rounded-lg py-2.5 text-sm font-medium leading-5 transition-colors focus:outline-none data-[selected]:bg-white data-[selected]:text-primary-700 data-[selected]:shadow data-[hover]:bg-white/50 data-[hover]:text-gray-900 text-gray-500"
           >
-            Global
+            #all
           </Tab>
           <Tab
             className="w-full rounded-lg py-2.5 text-sm font-medium leading-5 transition-colors focus:outline-none data-[selected]:bg-white data-[selected]:text-primary-700 data-[selected]:shadow data-[hover]:bg-white/50 data-[hover]:text-gray-900 text-gray-500"
           >
-            Same College
+            #myCollege
           </Tab>
           <Tab
             className="w-full rounded-lg py-2.5 text-sm font-medium leading-5 transition-colors focus:outline-none data-[selected]:bg-white data-[selected]:text-primary-700 data-[selected]:shadow data-[hover]:bg-white/50 data-[hover]:text-gray-900 text-gray-500"
           >
-            Matched
-          </Tab>
-          <Tab
-            className="w-full rounded-lg py-2.5 text-sm font-medium leading-5 transition-colors focus:outline-none data-[selected]:bg-white data-[selected]:text-primary-700 data-[selected]:shadow data-[hover]:bg-white/50 data-[hover]:text-gray-900 text-gray-500"
-          >
-            My Posts
+            #byMe
           </Tab>
         </TabList>
 
-        {/* Search & Skill Quick-Filters (Global, College, Matched) */}
-        {selectedTabIndex !== 3 && (
-          <div className="mb-8 flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between bg-white p-3 rounded-xl border border-gray-100 shadow-sm">
-            <div className="relative flex-1 max-w-md">
-              <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
-                <MagnifyingGlassIcon className="h-4 w-4 text-gray-400" />
-              </div>
-              <input
-                type="text"
-                value={boardSearch}
-                onChange={(e) => setBoardSearch(e.target.value)}
-                placeholder="Filter postings by title, role, or description..."
-                className="block w-full rounded-lg border border-gray-200 bg-gray-50/50 py-1.5 pl-9 pr-8 text-sm text-gray-900 placeholder-gray-400 focus:border-primary-500 focus:bg-white focus:outline-none focus:ring-1 focus:ring-primary-500"
-              />
-              {boardSearch && (
-                <button
-                  type="button"
-                  onClick={() => setBoardSearch('')}
-                  className="absolute inset-y-0 right-0 flex items-center pr-2.5 text-gray-400 hover:text-gray-600"
-                >
-                  <XMarkIcon className="h-4 w-4" />
-                </button>
-              )}
-            </div>
-
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
-              <span className="text-xs text-gray-400 mr-1 hidden sm:inline">Skills:</span>
-              {['React', 'Node.js', 'Python', 'TypeScript', 'Docker'].map((skill) => {
-                const isSelected = selectedSkill === skill;
-                return (
-                  <button
-                    key={skill}
-                    type="button"
-                    onClick={() => setSelectedSkill(isSelected ? '' : skill)}
-                    className={cn(
-                      'rounded-full px-2.5 py-1 text-xs font-medium border transition-colors shrink-0',
-                      isSelected
-                        ? 'bg-primary-600 text-white border-primary-600 shadow-sm'
-                        : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
-                    )}
-                  >
-                    {skill}
-                  </button>
-                );
-              })}
-              {(boardSearch || selectedSkill) && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setBoardSearch('');
-                    setSelectedSkill('');
-                  }}
-                  className="text-xs text-red-600 hover:text-red-700 font-semibold px-2 py-1 ml-1"
-                >
-                  Clear
-                </button>
-              )}
-            </div>
-          </div>
-        )}
+        {/* Community Filter Pills: #project, #hackathon, #competition */}
+        <div className="mb-6 flex items-center flex-wrap gap-2">
+          <span className="text-xs font-semibold text-gray-500 mr-1 uppercase tracking-wider">
+            Community:
+          </span>
+          {[
+            { id: 'project', label: '#project' },
+            { id: 'hackathon', label: '#hackathon' },
+            { id: 'competition', label: '#competition' },
+          ].map((c) => {
+            const isSelected = selectedCommunity === c.id;
+            return (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => setSelectedCommunity(c.id as any)}
+                className={cn(
+                  'rounded-full px-3.5 py-1.5 text-xs font-semibold transition-all cursor-pointer border',
+                  isSelected
+                    ? 'bg-primary-600 text-white border-primary-600 shadow-sm'
+                    : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                )}
+              >
+                {c.label}
+              </button>
+            );
+          })}
+        </div>
 
         <TabPanels>
           <TabPanel>
@@ -303,17 +303,6 @@ export default function BoardPage() {
             )}
           </TabPanel>
           <TabPanel>
-            {isLoadingMatched ? (
-              <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-                {[...Array(6)].map((_, i) => (
-                  <div key={i} className="h-64 animate-pulse rounded-xl bg-gray-200" />
-                ))}
-              </div>
-            ) : (
-              renderPostings(matchedPostings, matchedRef, hasNextMatched, isFetchingNextMatched, 'matched', () => fetchNextMatched())
-            )}
-          </TabPanel>
-          <TabPanel>
             <div className="flex items-center gap-2 mb-6">
               <button
                 type="button"
@@ -325,7 +314,7 @@ export default function BoardPage() {
                     : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                 )}
               >
-                My Group Postings ({myPostings.length})
+                My Group Postings ({filterByCommunity(myPostings).length})
               </button>
               <button
                 type="button"
@@ -348,10 +337,10 @@ export default function BoardPage() {
                     <div key={i} className="h-64 animate-pulse rounded-xl bg-gray-200" />
                   ))}
                 </div>
-              ) : myPostings.length === 0 ? (
+              ) : filterByCommunity(myPostings).length === 0 ? (
                 <EmptyState
-                  title="No postings created yet"
-                  description="You have not created any group postings yet. Post an opening to recruit members for your group."
+                  title={`No #${selectedCommunity} postings created`}
+                  description={`You have not created any #${selectedCommunity} postings yet.`}
                   action={{
                     label: 'Create Posting',
                     onClick: () => setIsCreatePostingOpen(true),
@@ -359,13 +348,13 @@ export default function BoardPage() {
                 />
               ) : (
                 <div className="flex flex-col gap-6 pb-12">
-                  <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3">
-                    {myPostings.map((posting: BoardPosting) => (
+                  <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+                    {filterByCommunity(myPostings).map((posting: BoardPosting) => (
                       <PostingCard
                         key={posting.id}
                         posting={posting}
                         isMyPost={true}
-                        onDeleteClick={() => handleDeletePosting(posting.id)}
+                        onClick={() => setViewingPosting(posting)}
                       />
                     ))}
                   </div>

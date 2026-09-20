@@ -10,13 +10,13 @@ export const getCollegeHandler = async (req, res) => {
     res.json({ status: 'success', data: result });
 };
 export const getMatchedHandler = async (req, res) => {
-    const { cursor, limit } = req.query;
-    const result = await boardsService.getMatchedBoard(req.user.id, req.user.collegeId, cursor, Number(limit));
+    const { cursor, limit, community } = req.query;
+    const result = await boardsService.getMatchedBoard(req.user.id, req.user.collegeId, cursor, Number(limit), community);
     res.json({ status: 'success', data: result });
 };
 export const getMyPostingsHandler = async (req, res) => {
-    const { cursor, limit } = req.query;
-    const result = await boardsService.getMyPostings(req.user.id, cursor, Number(limit));
+    const { cursor, limit, community } = req.query;
+    const result = await boardsService.getMyPostings(req.user.id, cursor, Number(limit), community);
     res.json({ status: 'success', data: result });
 };
 export const createPostingHandler = async (req, res) => {

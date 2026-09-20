@@ -9,6 +9,8 @@ export interface User {
   yearOfStudy: number | null;
   branch: string | null;
   lookingFor: 'project' | 'event' | 'both' | 'none';
+  openToInvites?: boolean;
+  open_to_invites?: boolean;
   profileCompleteness: number;
   lastActive: string;
   createdAt: string;
@@ -119,8 +121,9 @@ export interface BoardPosting {
   requiredInterests?: Interest[];
   matchedSkills?: Skill[];
   matchedInterests?: Interest[];
-  slotsTotal: number;
-  slotsFilled: number;
+  community?: 'project' | 'hackathon' | 'competition';
+  slotsTotal?: number;
+  slotsFilled?: number;
   status: 'open' | 'closed';
   createdAt: string;
   hasRequested?: boolean;
@@ -131,6 +134,8 @@ export interface BoardPosting {
   semantic_match_score?: number;
   semanticMatchScore?: number;
   matchScore?: number;
+  collegeName?: string;
+  college_name?: string;
 }
 
 export interface JoinRequest {
@@ -163,3 +168,20 @@ export interface LoginResponse {
   user: User;
   tokens: AuthTokens;
 }
+
+export interface GroupInvite {
+  id: string;
+  groupId: string;
+  groupName: string;
+  groupDescription?: string | null;
+  groupStatus?: 'open' | 'closed';
+  inviterId: string;
+  inviterName: string;
+  inviterAvatarUrl?: string | null;
+  collegeName?: string | null;
+  note?: string | null;
+  status: 'pending' | 'accepted' | 'declined';
+  createdAt: string;
+  updatedAt: string;
+}
+

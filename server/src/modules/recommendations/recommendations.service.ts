@@ -2,7 +2,7 @@ import { query } from '../../config/database.js';
 import { redis } from '../../config/redis.js';
 import { recommendationQueue } from '../../config/queue.js';
 
-async function hydrateProfiles(candidateIds: string[], viewerSkillIds: Set<string>, viewerInterestIds: Set<string>, recRows: any[], source: string, viewerCollegeId?: string | null) {
+async function hydrateProfiles(candidateIds: string[], viewerSkillIds: Set<string>, viewerInterestIds: Set<string>, recRows: any[], source: string, viewerCollegeId?: string | null, viewerUserId?: string) {
   if (candidateIds.length === 0) return { data: [], nextCursor: null, hasMore: false, source };
 
   const usersRes = await query(`SELECT * FROM users WHERE id = ANY($1)`, [candidateIds]);
@@ -27,6 +27,17 @@ async function hydrateProfiles(candidateIds: string[], viewerSkillIds: Set<strin
   if (viaIds.length > 0) {
     const viasRes = await query(`SELECT id, name, avatar_url FROM users WHERE id = ANY($1)`, [viaIds]);
     for (const r of viasRes.rows) viaNames.set(r.id, { id: r.id, name: r.name, avatarUrl: r.avatar_url });
+  }
+
+  // Batch-fetch any pending outgoing requests the viewer has sent to these candidates
+  const pendingSentSet = new Set<string>();
+  if (viewerUserId && candidateIds.length > 0) {
+    const pendingRes = await query(
+      `SELECT receiver_id FROM connections
+       WHERE requester_id = $1 AND receiver_id = ANY($2) AND status = 'pending'`,
+      [viewerUserId, candidateIds]
+    );
+    for (const r of pendingRes.rows) pendingSentSet.add(r.receiver_id);
   }
 
   const userMap = new Map(usersRes.rows.map(u => [u.id, u]));
@@ -57,6 +68,9 @@ async function hydrateProfiles(candidateIds: string[], viewerSkillIds: Set<strin
     const matchedSkills = uSkills.filter((s: any) => viewerSkillIds.has(s.id));
     const matchedInterests = uInterests.filter((i: any) => viewerInterestIds.has(i.id));
 
+    // 'pending' = viewer already sent a request; 'none' = no request yet
+    const connectionStatus = pendingSentSet.has(candidateId) ? 'pending' : 'none';
+
     items.push({
       id: user.id,
       name: user.name,
@@ -81,7 +95,8 @@ async function hydrateProfiles(candidateIds: string[], viewerSkillIds: Set<strin
       skills: uSkills,
       interests: uInterests,
       allSkills: uSkills,
-      allInterests: uInterests
+      allInterests: uInterests,
+      connectionStatus,
     });
 
     if (row.rank !== undefined) {
@@ -178,7 +193,7 @@ export async function getSimilarityRecs(userId: string, collegeId: string | null
     candidateIds = recRows.map(r => r.candidate_id);
   }
 
-  return hydrateProfiles(candidateIds, viewerSkillIds, viewerInterestIds, recRows, source, collegeId);
+  return hydrateProfiles(candidateIds, viewerSkillIds, viewerInterestIds, recRows, source, collegeId, userId);
 }
 
 export async function getSecondDegreeRecs(userId: string, collegeId: string | null, cursor: string | null, limit: number) {
@@ -259,5 +274,5 @@ export async function getSecondDegreeRecs(userId: string, collegeId: string | nu
     }
   }
 
-  return hydrateProfiles(candidateIds, viewerSkillIds, viewerInterestIds, recRows, source, collegeId);
+  return hydrateProfiles(candidateIds, viewerSkillIds, viewerInterestIds, recRows, source, collegeId, userId);
 }

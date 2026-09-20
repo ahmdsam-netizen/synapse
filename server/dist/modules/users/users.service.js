@@ -17,7 +17,7 @@ async function recomputeCompleteness(userId) {
     await query(`UPDATE users SET profile_completeness = $1 WHERE id = $2`, [completeness, userId]);
 }
 export async function getProfile(viewerId, targetId) {
-    const userRes = await query(`SELECT u.id, u.name, u.email, u.bio, u.avatar_url, u.year_of_study, u.branch, u.looking_for, u.profile_completeness, c.name as college_name 
+    const userRes = await query(`SELECT u.id, u.name, u.email, u.bio, u.avatar_url, u.year_of_study, u.branch, u.looking_for, u.profile_completeness, COALESCE(u.open_to_invites, TRUE) as open_to_invites, c.name as college_name 
      FROM users u 
      LEFT JOIN colleges c ON u.college_id = c.id 
      WHERE u.id = $1`, [targetId]);
@@ -58,6 +58,8 @@ export async function getProfile(viewerId, targetId) {
     }
     return {
         ...user,
+        openToInvites: user.open_to_invites ?? true,
+        open_to_invites: user.open_to_invites ?? true,
         skills: skillsRes.rows,
         interests: interestsRes.rows,
         workItems: workRes.rows,
@@ -80,7 +82,9 @@ export async function updateProfile(userId, data) {
         avatarUrl: 'avatar_url',
         yearOfStudy: 'year_of_study',
         branch: 'branch',
-        lookingFor: 'looking_for'
+        lookingFor: 'looking_for',
+        openToInvites: 'open_to_invites',
+        open_to_invites: 'open_to_invites'
     };
     for (const [key, value] of Object.entries(data)) {
         if (mapping[key] !== undefined && value !== undefined) {

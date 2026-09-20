@@ -12,9 +12,11 @@ export declare function listPending(userId: string): Promise<{
     requester_id: any;
     receiverId: any;
     receiver_id: any;
+    direction: any;
     status: any;
     createdAt: any;
     created_at: any;
+    userId: any;
     name: any;
     avatarUrl: any;
     avatar_url: any;

@@ -2,13 +2,14 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { Dialog, DialogPanel, DialogTitle, DialogBackdrop, TabGroup, TabList, Tab, TabPanels, TabPanel } from '@headlessui/react';
-import { XMarkIcon } from '@heroicons/react/24/outline';
+import { XMarkIcon, TrashIcon } from '@heroicons/react/24/outline';
 import { groupsApi } from '../../api/groups';
 import { StatusBadge } from '../shared/StatusBadge';
 import { MemberList } from './MemberList';
 import { AdminRequestQueue } from '../board/AdminRequestQueue';
 import { ChatPlaceholder } from './ChatPlaceholder';
 import { CreatePostingOnlyModal } from '../board/CreatePostingOnlyModal';
+import { Modal } from '../shared/Modal';
 
 interface GroupDetailProps {
   groupId: string;
@@ -43,6 +44,27 @@ export function GroupDetail({ groupId, onClose }: GroupDetailProps) {
     onError: () => toast.error('Failed to remove member'),
   });
 
+  const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
+
+  const deleteMutation = useMutation({
+    mutationFn: () => groupsApi.deleteGroup(groupId),
+    onSuccess: () => {
+      toast.success('Group deleted successfully');
+      queryClient.invalidateQueries({ queryKey: ['groups'] });
+      queryClient.invalidateQueries({ queryKey: ['groups', 'me'] });
+      queryClient.invalidateQueries({ queryKey: ['board'] });
+      setIsConfirmDeleteOpen(false);
+      onClose();
+    },
+    onError: (err: any) => {
+      toast.error(
+        err.response?.data?.message ||
+        err.response?.data?.error ||
+        'Failed to delete group'
+      );
+    },
+  });
+
   const groupDetail: any = (groupData?.data as any)?.data || (groupData?.data as any)?.group || groupData?.data;
   const currentUserRole = groupDetail?.viewerRole || groupDetail?.userRole || (groupDetail?.members || []).find((m: any) => m.id === groupDetail?.viewerId)?.role;
   const memberCount = groupDetail?.memberCount ?? groupDetail?.member_count ?? groupDetail?.members?.length ?? 0;
@@ -62,10 +84,20 @@ export function GroupDetail({ groupId, onClose }: GroupDetailProps) {
                     <DialogTitle className="text-xl font-semibold leading-6 text-gray-900">
                       {isPending ? 'Loading...' : groupDetail?.name}
                     </DialogTitle>
-                    <div className="ml-3 flex h-7 items-center">
+                    <div className="ml-3 flex h-7 items-center gap-2">
+                      {currentUserRole === 'admin' && (
+                        <button
+                          type="button"
+                          onClick={() => setIsConfirmDeleteOpen(true)}
+                          title="Delete Group"
+                          className="rounded-md p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 focus:outline-none transition-colors cursor-pointer"
+                        >
+                          <TrashIcon className="h-5 w-5" />
+                        </button>
+                      )}
                       <button
                         type="button"
-                        className="rounded-md bg-white text-gray-400 hover:text-gray-500 focus:outline-none"
+                        className="rounded-md bg-white text-gray-400 hover:text-gray-500 focus:outline-none cursor-pointer"
                         onClick={onClose}
                       >
                         <span className="sr-only">Close panel</span>
@@ -169,6 +201,41 @@ export function GroupDetail({ groupId, onClose }: GroupDetailProps) {
           onClose={() => setIsCreatePostingOpen(false)}
           initialGroupId={groupId}
         />
+      )}
+
+      {isConfirmDeleteOpen && (
+        <Modal
+          open={isConfirmDeleteOpen}
+          onClose={() => setIsConfirmDeleteOpen(false)}
+          title="Delete Group"
+        >
+          <div className="space-y-4">
+            <p className="text-sm text-gray-600">
+              Are you sure you want to delete{' '}
+              <span className="font-semibold text-gray-900">{groupDetail?.name}</span>? All
+              members, active postings, and invitations will be permanently removed. This action
+              cannot be undone.
+            </p>
+            <div className="flex justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setIsConfirmDeleteOpen(false)}
+                disabled={deleteMutation.isPending}
+                className="rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => deleteMutation.mutate()}
+                disabled={deleteMutation.isPending}
+                className="rounded-md bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500 disabled:opacity-50 cursor-pointer"
+              >
+                {deleteMutation.isPending ? 'Deleting...' : 'Delete Group'}
+              </button>
+            </div>
+          </div>
+        </Modal>
       )}
     </Dialog>
   );

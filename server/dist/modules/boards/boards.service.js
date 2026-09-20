@@ -65,6 +65,7 @@ async function hydrateBoardPostings(rows, viewerUserId) {
             slots_total: r.slots_total,
             slotsFilled: r.slots_filled,
             slots_filled: r.slots_filled,
+            community: r.community || 'project',
             expiresAt: r.expires_at,
             expires_at: r.expires_at,
             status: r.status,
@@ -106,6 +107,11 @@ export const getGlobalBoard = async (cursor, limit, filters, userId) => {
     if (filters.q && filters.q.trim()) {
         baseQuery += ` AND (bp.title ILIKE $${paramIndex} OR bp.description ILIKE $${paramIndex} OR g.name ILIKE $${paramIndex})`;
         params.push(`%${filters.q.trim()}%`);
+        paramIndex++;
+    }
+    if (filters.community && filters.community !== 'all') {
+        baseQuery += ` AND bp.community = $${paramIndex}`;
+        params.push(filters.community);
         paramIndex++;
     }
     if (skills && skills.length > 0) {
@@ -170,7 +176,7 @@ export const getGlobalBoard = async (cursor, limit, filters, userId) => {
     const hydrated = await hydrateBoardPostings(paginated.data, userId);
     return { ...paginated, data: hydrated };
 };
-export const getMatchedBoard = async (userId, collegeId, cursor, limit) => {
+export const getMatchedBoard = async (userId, collegeId, cursor, limit, community) => {
     await cleanExpiredPostings();
     const params = [userId, collegeId];
     let paramIndex = 3;
@@ -196,6 +202,11 @@ export const getMatchedBoard = async (userId, collegeId, cursor, limit) => {
       AND (COALESCE(skill_overlap.cnt, 0) + COALESCE(interest_overlap.cnt, 0)) > 0
       AND NOT EXISTS (SELECT 1 FROM group_members WHERE group_id = bp.group_id AND user_id = $1)
   `;
+    if (community && community !== 'all') {
+        baseQuery += ` AND bp.community = $${paramIndex}`;
+        params.push(community);
+        paramIndex++;
+    }
     if (cursor) {
         const decoded = decodeCursor(cursor);
         if (decoded) {
@@ -217,7 +228,7 @@ export const getMatchedBoard = async (userId, collegeId, cursor, limit) => {
     const hydrated = await hydrateBoardPostings(paginated.data, userId);
     return { ...paginated, data: hydrated };
 };
-export const getMyPostings = async (userId, cursor, limit) => {
+export const getMyPostings = async (userId, cursor, limit, community) => {
     await cleanExpiredPostings();
     const params = [userId];
     let paramIndex = 2;
@@ -233,6 +244,11 @@ export const getMyPostings = async (userId, cursor, limit) => {
     ))
     AND (bp.expires_at IS NULL OR bp.expires_at > NOW())
   `;
+    if (community && community !== 'all') {
+        baseQuery += ` AND bp.community = $${paramIndex}`;
+        params.push(community);
+        paramIndex++;
+    }
     if (cursor) {
         const decoded = decodeCursor(cursor);
         if (decoded && decoded.createdAt && decoded.id) {
@@ -262,8 +278,9 @@ export const createPosting = async (userId, data) => {
     }
     const expiresInHours = Number(data.expiresInHours) || 72; // default 72 hours (3 days)
     const expiresAt = new Date(Date.now() + expiresInHours * 60 * 60 * 1000);
-    const { rows } = await query(`INSERT INTO board_postings (group_id, title, description, roles_needed, required_skill_ids, required_interest_ids, slots_total, expires_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`, [data.groupId, data.title, data.description, data.rolesNeeded, data.requiredSkillIds, data.requiredInterestIds, data.slotsTotal, expiresAt]);
+    const community = ['project', 'hackathon', 'competition'].includes(data.community) ? data.community : 'project';
+    const { rows } = await query(`INSERT INTO board_postings (group_id, title, description, community, roles_needed, required_skill_ids, required_interest_ids, slots_total, expires_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`, [data.groupId, data.title, data.description, community, data.rolesNeeded || [], data.requiredSkillIds || [], data.requiredInterestIds || [], 1, expiresAt]);
     return rows[0];
 };
 export const updatePosting = async (postingId, userId, data) => {
@@ -384,9 +401,8 @@ export const approveRequest = async (requestId, adminId) => {
             throw new ForbiddenError('Only admins can approve requests');
         await client.query(`UPDATE join_requests SET status = 'approved', reviewed_by = $1, reviewed_at = NOW() WHERE id = $2`, [adminId, requestId]);
         await client.query(`INSERT INTO group_members (group_id, user_id, role) VALUES ($1, $2, 'member') ON CONFLICT DO NOTHING`, [request.group_id, request.user_id]);
-        const { rows: bpRows } = await client.query(`UPDATE board_postings SET slots_filled = slots_filled + 1 WHERE id = $1 RETURNING slots_filled, slots_total`, [request.posting_id]);
-        if (bpRows.length && bpRows[0].slots_filled >= bpRows[0].slots_total) {
-            // Auto-delete posting and remove from board when all slots are filled
+        if (request.posting_id) {
+            // Auto-delete posting and remove from board immediately when any applicant is selected/approved
             await client.query(`DELETE FROM board_postings WHERE id = $1`, [request.posting_id]);
         }
         await client.query('COMMIT');

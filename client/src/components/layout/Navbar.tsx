@@ -20,9 +20,9 @@ export default function Navbar() {
 
   const navLinks = [
     { name: 'Home', path: '/' },
-    { name: 'Recommendations', path: '/recommendations' },
     { name: 'Boards', path: '/boards' },
     { name: 'Connections', path: '/connections' },
+    { name: 'Recommendations', path: '/recommendations' },
   ];
 
   return (

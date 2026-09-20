@@ -6,21 +6,29 @@ import {
   UserGroupIcon,
   ClockIcon,
   MagnifyingGlassIcon,
-  UserMinusIcon,
   CheckIcon,
   XMarkIcon,
-  ArrowTopRightOnSquareIcon,
+  SparklesIcon,
+  InformationCircleIcon,
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import { connectionsApi } from '../api/connections';
-import { TagChip } from '../components/shared/TagChip';
+import { recommendationsApi } from '../api/recommendations';
+import { useAuth } from '../context/AuthContext';
+import { RecommendedUser } from '../types';
 import { EmptyState } from '../components/shared/EmptyState';
-import { getInitials, formatDate, timeAgo, cn } from '../lib/utils';
+import { UserCard } from '../components/shared/UserCard';
+import { SkeletonCard } from '../components/shared/SkeletonCard';
+import { InfiniteScrollLoader } from '../components/shared/InfiniteScrollLoader';
+import { useInfiniteScroll } from '../hooks/useInfiniteScroll';
+import { getInitials, timeAgo, cn } from '../lib/utils';
 
 export default function ConnectionsPage() {
   const queryClient = useQueryClient();
+  const { user: currentUser } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
-  const [disconnectingId, setDisconnectingId] = useState<string | null>(null);
+  const [secondDegreeSource, setSecondDegreeSource] = useState<string | undefined>(undefined);
+  const [pendingSubFilter, setPendingSubFilter] = useState<'all' | 'received' | 'sent'>('all');
 
   // Fetch accepted connections
   const {
@@ -51,6 +59,36 @@ export default function ConnectionsPage() {
     },
   });
 
+  // Fetch 2nd-degree recommendations
+  const {
+    data: secondDegreeUsers,
+    isLoading: isLoadingSecondDegree,
+    isError: isSecondDegreeError,
+    error: secondDegreeError,
+    refetch: refetchSecondDegree,
+    hasNextPage: hasNextPageSecondDegree,
+    isFetchingNextPage: isFetchingNextPageSecondDegree,
+    fetchNextPage: fetchNextPageSecondDegree,
+    sentinelRef: secondDegreeSentinelRef,
+  } = useInfiniteScroll<RecommendedUser>({
+    queryKey: ['connections', 'second-degree'],
+    queryFn: async (cursor) => {
+      const normalizeRecs = (resData: any) => {
+        if (Array.isArray(resData)) return { data: resData, nextCursor: null };
+        if (Array.isArray(resData?.data?.data)) return { ...resData, data: resData.data.data, nextCursor: resData.data.nextCursor ?? null };
+        if (Array.isArray(resData?.data)) return resData;
+        return resData || { data: [], nextCursor: null };
+      };
+
+      const res = await recommendationsApi.getSecondDegree(cursor, 30);
+      setSecondDegreeSource(res.data?.source);
+      return normalizeRecs(res.data);
+    },
+  });
+
+  const isSecondDegreeFallback =
+    secondDegreeSource === 'direct_connections' || secondDegreeSource === 'similarity';
+
   // Mutations for accepting/declining requests
   const acceptMutation = useMutation({
     mutationFn: (id: string) => connectionsApi.accept(id),
@@ -58,6 +96,7 @@ export default function ConnectionsPage() {
       toast.success('Connection accepted!');
       queryClient.invalidateQueries({ queryKey: ['connections'] });
       queryClient.invalidateQueries({ queryKey: ['connections', 'pending'] });
+      queryClient.invalidateQueries({ queryKey: ['connections', 'second-degree'] });
     },
     onError: () => toast.error('Failed to accept connection request'),
   });
@@ -77,18 +116,49 @@ export default function ConnectionsPage() {
     mutationFn: (id: string) => connectionsApi.remove(id),
     onSuccess: () => {
       toast.success('Connection removed');
-      setDisconnectingId(null);
       queryClient.invalidateQueries({ queryKey: ['connections'] });
       queryClient.invalidateQueries({ queryKey: ['connections', 'pending'] });
+      queryClient.invalidateQueries({ queryKey: ['connections', 'second-degree'] });
     },
     onError: () => {
       toast.error('Failed to remove connection');
-      setDisconnectingId(null);
+    },
+  });
+
+  const cancelRequestMutation = useMutation({
+    mutationFn: (id: string) => connectionsApi.remove(id),
+    onSuccess: () => {
+      toast.success('Connection request cancelled');
+      queryClient.invalidateQueries({ queryKey: ['connections', 'pending'] });
+      queryClient.invalidateQueries({ queryKey: ['connections', 'second-degree'] });
+      queryClient.invalidateQueries({ queryKey: ['recommendations'] });
+    },
+    onError: () => {
+      toast.error('Failed to cancel connection request');
     },
   });
 
   const connections: any[] = connectionsData || [];
-  const pendingRequests: any[] = pendingData || [];
+  
+  // Pending requests (both received and sent)
+  const allPendingRequests: any[] = pendingData || [];
+  const receivedRequests = useMemo(() => {
+    return allPendingRequests.filter(
+      (req: any) => req.direction === 'received' || (currentUser?.id && (req.receiverId === currentUser.id || req.receiver_id === currentUser.id))
+    );
+  }, [allPendingRequests, currentUser]);
+
+  const sentRequests = useMemo(() => {
+    return allPendingRequests.filter(
+      (req: any) => req.direction === 'sent' || (currentUser?.id && (req.requesterId === currentUser.id || req.requester_id === currentUser.id))
+    );
+  }, [allPendingRequests, currentUser]);
+
+  const displayedPendingRequests = useMemo(() => {
+    if (pendingSubFilter === 'received') return receivedRequests;
+    if (pendingSubFilter === 'sent') return sentRequests;
+    return allPendingRequests;
+  }, [allPendingRequests, receivedRequests, sentRequests, pendingSubFilter]);
 
   // Filter connections by search query
   const filteredConnections = useMemo(() => {
@@ -108,9 +178,9 @@ export default function ConnectionsPage() {
       {/* Header */}
       <div className="mb-8 flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">My Network</h1>
+          <h1 className="text-2xl font-bold text-gray-900">#myNetwork</h1>
           <p className="mt-1 text-sm text-gray-500">
-            View and manage your student connections and incoming requests
+            View and manage your connections, second degree connections and pending connections.
           </p>
         </div>
         <Link
@@ -122,23 +192,25 @@ export default function ConnectionsPage() {
       </div>
 
       <TabGroup>
-        <TabList className="mb-8 flex max-w-md space-x-1 rounded-xl bg-gray-100 p-1">
-          <Tab className="flex w-full items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-medium leading-5 transition-colors focus:outline-none data-[selected]:bg-white data-[selected]:text-primary-700 data-[selected]:shadow text-gray-600 hover:text-gray-900">
-            <UserGroupIcon className="h-4 w-4" />
-            <span>Connections</span>
+        <TabList className="mb-8 flex max-w-xl space-x-1 rounded-xl bg-gray-100 p-1">
+          <Tab className="flex w-full items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-medium leading-5 transition-colors focus:outline-none data-[selected]:bg-white data-[selected]:text-primary-700 data-[selected]:shadow text-gray-600 hover:text-gray-900 cursor-pointer">
+            <span>#connections</span>
             <span className="ml-1 rounded-full bg-gray-200 px-2 py-0.5 text-xs font-semibold text-gray-700 data-[selected]:bg-primary-100 data-[selected]:text-primary-800">
               {connections.length}
             </span>
           </Tab>
-          <Tab className="flex w-full items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-medium leading-5 transition-colors focus:outline-none data-[selected]:bg-white data-[selected]:text-primary-700 data-[selected]:shadow text-gray-600 hover:text-gray-900">
-            <ClockIcon className="h-4 w-4" />
-            <span>Pending Requests</span>
-            {pendingRequests.length > 0 && (
+          <Tab className="flex w-full items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-medium leading-5 transition-colors focus:outline-none data-[selected]:bg-white data-[selected]:text-primary-700 data-[selected]:shadow text-gray-600 hover:text-gray-900 cursor-pointer">
+            <span>#secondDegree</span>
+          </Tab>
+          <Tab className="flex w-full items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-medium leading-5 transition-colors focus:outline-none data-[selected]:bg-white data-[selected]:text-primary-700 data-[selected]:shadow text-gray-600 hover:text-gray-900 cursor-pointer">
+            <span>#pendingRequest</span>
+            {allPendingRequests.length > 0 && (
               <span className="ml-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-600">
-                {pendingRequests.length}
+                {allPendingRequests.length}
               </span>
             )}
           </Tab>
+          
         </TabList>
 
         <TabPanels>
@@ -163,127 +235,20 @@ export default function ConnectionsPage() {
             {isLoadingConnections ? (
               <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
                 {[...Array(6)].map((_, i) => (
-                  <div key={i} className="h-48 animate-pulse rounded-xl bg-gray-200" />
+                  <SkeletonCard key={i} />
                 ))}
               </div>
             ) : filteredConnections.length > 0 ? (
               <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-                {filteredConnections.map((user) => {
-                  const college = user.collegeName || user.college_name || 'College Member';
-                  const year = user.yearOfStudy || user.year_of_study || 1;
-                  const skills = user.skills || [];
-                  const isConfirming = disconnectingId === (user.friendId || user.id);
-
-                  return (
-                    <div
-                      key={user.id || user.friendId}
-                      className="flex flex-col justify-between rounded-xl border border-gray-100 bg-white p-5 shadow-sm hover:shadow-md transition-shadow"
-                    >
-                      <div>
-                        {/* Top: Avatar & Info */}
-                        <div className="flex items-start gap-3">
-                          {user.avatarUrl || user.avatar_url ? (
-                            <img
-                              src={user.avatarUrl || user.avatar_url}
-                              alt={user.name}
-                              className="h-12 w-12 rounded-full object-cover ring-2 ring-gray-100 shrink-0"
-                            />
-                          ) : (
-                            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-primary-500 to-primary-700 text-base font-semibold text-white ring-2 ring-gray-100">
-                              {getInitials(user.name)}
-                            </div>
-                          )}
-                          <div className="min-w-0 flex-1">
-                            <Link
-                              to={`/profile/${user.id || user.friendId}`}
-                              className="block truncate font-semibold text-gray-900 hover:text-primary-600 transition-colors"
-                            >
-                              {user.name}
-                            </Link>
-                            <p className="truncate text-xs text-gray-500">
-                              {college} • Year {year}
-                            </p>
-                            {user.branch && (
-                              <p className="truncate text-xs text-gray-400 mt-0.5">
-                                {user.branch}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Bio */}
-                        {user.bio && (
-                          <p className="mt-3 text-xs text-gray-600 line-clamp-2">
-                            {user.bio}
-                          </p>
-                        )}
-
-                        {/* Skills */}
-                        {skills.length > 0 && (
-                          <div className="mt-3 flex flex-wrap gap-1.5">
-                            {skills.slice(0, 4).map((s: any, idx: number) => (
-                              <TagChip
-                                key={idx}
-                                label={typeof s === 'string' ? s : s.name}
-                                variant="skill"
-                                size="sm"
-                              />
-                            ))}
-                            {skills.length > 4 && (
-                              <span className="self-center text-[10px] text-gray-400">
-                                +{skills.length - 4} more
-                              </span>
-                            )}
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Bottom Footer: Connected Date & Actions */}
-                      <div className="mt-4 pt-3 border-t border-gray-100 flex items-center justify-between">
-                        <span className="text-[11px] text-gray-400">
-                          {user.connectedAt || user.connected_at
-                            ? `Connected ${timeAgo(user.connectedAt || user.connected_at)}`
-                            : 'Connected'}
-                        </span>
-
-                        <div className="flex items-center gap-2">
-                          <Link
-                            to={`/profile/${user.id || user.friendId}`}
-                            className="inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium text-primary-700 bg-primary-50 hover:bg-primary-100 transition-colors"
-                          >
-                            <span>Profile</span>
-                            <ArrowTopRightOnSquareIcon className="h-3 w-3" />
-                          </Link>
-
-                          {isConfirming ? (
-                            <div className="flex items-center gap-1">
-                              <button
-                                onClick={() => removeMutation.mutate(user.connectionId || user.connection_id || user.friendId || user.id)}
-                                className="rounded px-2 py-1 text-[11px] font-semibold text-white bg-red-600 hover:bg-red-700 transition-colors"
-                              >
-                                Confirm
-                              </button>
-                              <button
-                                onClick={() => setDisconnectingId(null)}
-                                className="rounded px-1.5 py-1 text-[11px] text-gray-500 hover:bg-gray-100"
-                              >
-                                Cancel
-                              </button>
-                            </div>
-                          ) : (
-                            <button
-                              onClick={() => setDisconnectingId(user.connectionId || user.connection_id || user.friendId || user.id)}
-                              title="Disconnect"
-                              className="p-1 text-gray-400 hover:text-red-600 rounded transition-colors"
-                            >
-                              <UserMinusIcon className="h-4 w-4" />
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
+                {filteredConnections.map((user) => (
+                  <UserCard
+                    key={user.id || user.friendId}
+                    user={user}
+                    mode="connection"
+                    onDisconnect={(connId) => removeMutation.mutate(connId)}
+                    isDisconnecting={removeMutation.isPending}
+                  />
+                ))}
               </div>
             ) : isConnectionsError ? (
               <EmptyState
@@ -315,8 +280,120 @@ export default function ConnectionsPage() {
             )}
           </TabPanel>
 
-          {/* TAB 2: PENDING REQUESTS */}
+          
+
+          {/* TAB 3: 2ND-DEGREE NETWORK */}
           <TabPanel>
+            {isSecondDegreeFallback && (
+              <div className="mb-6 flex items-center p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-800">
+                <InformationCircleIcon className="w-5 h-5 mr-3 flex-shrink-0 text-amber-500" />
+                <p className="text-sm font-medium">
+                  {secondDegreeSource === 'direct_connections'
+                    ? "Showing your connections — no new suggestions right now."
+                    : "Showing similar students — no 2nd-degree suggestions right now."}
+                </p>
+              </div>
+            )}
+
+            {isLoadingSecondDegree ? (
+              <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <SkeletonCard key={i} />
+                ))}
+              </div>
+            ) : isSecondDegreeError ? (
+              <EmptyState
+                title="Failed to load suggestions"
+                description={
+                  (secondDegreeError as any)?.response?.data?.error ||
+                  (secondDegreeError as any)?.response?.data?.message ||
+                  (secondDegreeError as any)?.message ||
+                  "Could not retrieve 2nd-degree network suggestions. Please try again."
+                }
+                action={{
+                  label: 'Retry',
+                  onClick: () => refetchSecondDegree(),
+                }}
+              />
+            ) : secondDegreeUsers.length > 0 ? (
+              <div>
+                <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+                  {secondDegreeUsers.map((user) => (
+                    <UserCard
+                      key={user.id}
+                      user={user}
+                      mode="second_degree"
+                      onConnect={() => {
+                        queryClient.invalidateQueries({ queryKey: ['connections', 'second-degree'] });
+                      }}
+                    />
+                  ))}
+                </div>
+                <InfiniteScrollLoader
+                  ref={secondDegreeSentinelRef}
+                  isFetchingNextPage={isFetchingNextPageSecondDegree}
+                  hasNextPage={hasNextPageSecondDegree}
+                  onLoadMore={() => fetchNextPageSecondDegree()}
+                  label="Load More Suggestions"
+                />
+              </div>
+            ) : (
+              <EmptyState
+                title="No 2nd-degree connections yet"
+                description="Connect with more classmates to expand your network and discover friends of friends."
+                action={{
+                  label: 'Discover Recommendations',
+                  onClick: () => (window.location.href = '/recommendations'),
+                }}
+              />
+            )}
+          </TabPanel>
+          
+          {/* TAB 2: PENDING REQUESTS */}
+
+          <TabPanel>
+            {/* Sub-filter tabs: All, Received, Sent */}
+            {allPendingRequests.length > 0 && (
+              <div className="mb-6 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPendingSubFilter('all')}
+                  className={cn(
+                    'rounded-lg px-3 py-1.5 text-xs font-semibold transition-all cursor-pointer border',
+                    pendingSubFilter === 'all'
+                      ? 'bg-primary-600 text-white border-primary-600 shadow-sm'
+                      : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
+                  )}
+                >
+                  All ({allPendingRequests.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPendingSubFilter('received')}
+                  className={cn(
+                    'rounded-lg px-3 py-1.5 text-xs font-semibold transition-all cursor-pointer border',
+                    pendingSubFilter === 'received'
+                      ? 'bg-primary-600 text-white border-primary-600 shadow-sm'
+                      : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
+                  )}
+                >
+                  Received ({receivedRequests.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPendingSubFilter('sent')}
+                  className={cn(
+                    'rounded-lg px-3 py-1.5 text-xs font-semibold transition-all cursor-pointer border',
+                    pendingSubFilter === 'sent'
+                      ? 'bg-primary-600 text-white border-primary-600 shadow-sm'
+                      : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
+                  )}
+                >
+                  Sent ({sentRequests.length})
+                </button>
+              </div>
+            )}
+
             {isLoadingPending ? (
               <div className="space-y-4">
                 {[...Array(3)].map((_, i) => (
@@ -333,77 +410,122 @@ export default function ConnectionsPage() {
                   Retry
                 </button>
               </div>
-            ) : pendingRequests.length > 0 ? (
+            ) : displayedPendingRequests.length > 0 ? (
               <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
                 <ul className="divide-y divide-gray-200">
-                  {pendingRequests.map((req: any) => (
-                    <li key={req.id} className="p-4 sm:p-6 hover:bg-gray-50/50 transition-colors">
-                      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                        <div className="flex items-start gap-4">
-                          {req.avatarUrl || req.avatar_url ? (
-                            <img
-                              src={req.avatarUrl || req.avatar_url}
-                              alt={req.name}
-                              className="h-12 w-12 rounded-full object-cover ring-2 ring-gray-100 shrink-0"
-                            />
-                          ) : (
-                            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-primary-100 text-sm font-semibold text-primary-700">
-                              {getInitials(req.name || 'User')}
-                            </div>
-                          )}
-                          <div>
-                            <Link
-                              to={`/profile/${req.requesterId || req.requester_id}`}
-                              className="text-base font-semibold text-gray-900 hover:text-primary-600 transition-colors"
-                            >
-                              {req.name}
-                            </Link>
-                            <p className="text-xs text-gray-500 mt-0.5">
-                              {req.collegeName || req.college_name || 'College Student'} • Year{' '}
-                              {req.yearOfStudy || req.year_of_study || 1}
-                              {req.branch ? ` • ${req.branch}` : ''}
-                            </p>
-                            {req.bio && (
-                              <p className="text-xs text-gray-600 mt-1 line-clamp-1">
-                                {req.bio}
-                              </p>
+                  {displayedPendingRequests.map((req: any) => {
+                    const isIncoming =
+                      req.direction === 'received' ||
+                      (currentUser?.id &&
+                        (req.receiverId === currentUser.id || req.receiver_id === currentUser.id));
+                    const targetProfileId =
+                      req.userId ||
+                      (isIncoming
+                        ? req.requesterId || req.requester_id
+                        : req.receiverId || req.receiver_id);
+
+                    return (
+                      <li key={req.id} className="p-4 sm:p-6 hover:bg-gray-50/50 transition-colors">
+                        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="flex items-start gap-4">
+                            {req.avatarUrl || req.avatar_url ? (
+                              <img
+                                src={req.avatarUrl || req.avatar_url}
+                                alt={req.name}
+                                className="h-12 w-12 rounded-full object-cover ring-2 ring-gray-100 shrink-0"
+                              />
+                            ) : (
+                              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-primary-100 text-sm font-semibold text-primary-700">
+                                {getInitials(req.name || 'User')}
+                              </div>
                             )}
-                            <span className="text-[11px] text-gray-400 mt-1 block">
-                              Requested {timeAgo(req.createdAt || req.created_at)}
-                            </span>
+                            <div>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <Link
+                                  to={`/profile/${targetProfileId}`}
+                                  className="text-base font-semibold text-gray-900 hover:text-primary-600 transition-colors"
+                                >
+                                  {req.name}
+                                </Link>
+                                {isIncoming ? (
+                                  <span className="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700 border border-blue-200">
+                                    Received
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700 border border-amber-200">
+                                    Sent Request
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-xs text-gray-500 mt-0.5">
+                                {req.collegeName || req.college_name || 'College Student'} • Year{' '}
+                                {req.yearOfStudy || req.year_of_study || 1}
+                                {req.branch ? ` • ${req.branch}` : ''}
+                              </p>
+                              {req.bio && (
+                                <p className="text-xs text-gray-600 mt-1 line-clamp-1">
+                                  {req.bio}
+                                </p>
+                              )}
+                              <span className="text-[11px] text-gray-400 mt-1 block">
+                                {isIncoming ? 'Requested ' : 'Sent '}
+                                {timeAgo(req.createdAt || req.created_at)}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Action buttons */}
+                          <div className="flex items-center gap-2 self-end sm:self-center">
+                            {isIncoming ? (
+                              <>
+                                <button
+                                  onClick={() => acceptMutation.mutate(req.id)}
+                                  disabled={acceptMutation.isPending}
+                                  className="inline-flex items-center gap-1 rounded-lg bg-primary-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-primary-700 transition-colors disabled:opacity-50 cursor-pointer"
+                                >
+                                  <CheckIcon className="h-4 w-4" />
+                                  <span>Accept</span>
+                                </button>
+                                <button
+                                  onClick={() => declineMutation.mutate(req.id)}
+                                  disabled={declineMutation.isPending}
+                                  className="inline-flex items-center gap-1 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 shadow-sm hover:bg-gray-50 transition-colors disabled:opacity-50 cursor-pointer"
+                                >
+                                  <XMarkIcon className="h-4 w-4" />
+                                  <span>Decline</span>
+                                </button>
+                              </>
+                            ) : (
+                              <button
+                                onClick={() => cancelRequestMutation.mutate(req.id)}
+                                disabled={cancelRequestMutation.isPending}
+                                className="inline-flex items-center gap-1 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 shadow-sm hover:bg-red-50 hover:text-red-700 hover:border-red-200 transition-colors disabled:opacity-50 cursor-pointer"
+                              >
+                                <XMarkIcon className="h-4 w-4" />
+                                <span>{cancelRequestMutation.isPending ? 'Cancelling...' : 'Cancel Request'}</span>
+                              </button>
+                            )}
                           </div>
                         </div>
-
-                        {/* Action buttons */}
-                        <div className="flex items-center gap-2 self-end sm:self-center">
-                          <button
-                            onClick={() => acceptMutation.mutate(req.id)}
-                            disabled={acceptMutation.isPending}
-                            className="inline-flex items-center gap-1 rounded-lg bg-primary-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-primary-700 transition-colors disabled:opacity-50"
-                          >
-                            <CheckIcon className="h-4 w-4" />
-                            <span>Accept</span>
-                          </button>
-                          <button
-                            onClick={() => declineMutation.mutate(req.id)}
-                            disabled={declineMutation.isPending}
-                            className="inline-flex items-center gap-1 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 shadow-sm hover:bg-gray-50 transition-colors disabled:opacity-50"
-                          >
-                            <XMarkIcon className="h-4 w-4" />
-                            <span>Decline</span>
-                          </button>
-                        </div>
-                      </div>
-                    </li>
-                  ))}
+                      </li>
+                    );
+                  })}
                 </ul>
               </div>
             ) : (
               <div className="rounded-xl border border-gray-200 bg-gray-50 p-12 text-center">
                 <ClockIcon className="mx-auto h-8 w-8 text-gray-400" />
-                <h3 className="mt-2 text-sm font-semibold text-gray-900">No pending connection requests</h3>
+                <h3 className="mt-2 text-sm font-semibold text-gray-900">
+                  {pendingSubFilter === 'sent'
+                    ? 'No sent connection requests'
+                    : pendingSubFilter === 'received'
+                    ? 'No received connection requests'
+                    : 'No pending connection requests'}
+                </h3>
                 <p className="mt-1 text-xs text-gray-500">
-                  When other students request to connect with you, they will appear here.
+                  {pendingSubFilter === 'sent'
+                    ? "You haven't sent any pending connection requests."
+                    : 'When you send or receive connection requests, they will appear here.'}
                 </p>
               </div>
             )}

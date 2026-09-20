@@ -2,30 +2,31 @@ import apiClient from './client';
 import type { BoardPosting, JoinRequest, PaginatedResponse } from '../types';
 
 export const boardsApi = {
-  getGlobal: (params: { cursor?: string | null; limit?: number; q?: string; skills?: string[]; interests?: string[]; collegeId?: string }) => {
+  getGlobal: (params: { cursor?: string | null; limit?: number; q?: string; community?: string; skills?: string[]; interests?: string[]; collegeId?: string }) => {
     const p: any = { ...params };
     if (Array.isArray(params.skills)) p.skills = params.skills.join(',');
     if (Array.isArray(params.interests)) p.interests = params.interests.join(',');
     return apiClient.get<PaginatedResponse<BoardPosting>>('/boards/global', { params: p });
   },
 
-  getCollege: (params: { cursor?: string | null; limit?: number; q?: string; skills?: string[]; interests?: string[] }) => {
+  getCollege: (params: { cursor?: string | null; limit?: number; q?: string; community?: string; skills?: string[]; interests?: string[] }) => {
     const p: any = { ...params };
     if (Array.isArray(params.skills)) p.skills = params.skills.join(',');
     if (Array.isArray(params.interests)) p.interests = params.interests.join(',');
     return apiClient.get<PaginatedResponse<BoardPosting>>('/boards/college', { params: p });
   },
 
-  getMatched: (cursor?: string | null, limit: number = 30) =>
-    apiClient.get<PaginatedResponse<BoardPosting>>('/boards/matched', { params: { cursor, limit } }),
+  getMatched: (cursor?: string | null, limit: number = 30, community?: string) =>
+    apiClient.get<PaginatedResponse<BoardPosting>>('/boards/matched', { params: { cursor, limit, community } }),
 
-  getMyPostings: (params?: { cursor?: string | null; limit?: number }) =>
+  getMyPostings: (params?: { cursor?: string | null; limit?: number; community?: string }) =>
     apiClient.get<PaginatedResponse<BoardPosting>>('/boards/my-postings', { params }),
 
   createPosting: (data: {
     groupId: string;
     title: string;
     description?: string;
+    community?: 'project' | 'hackathon' | 'competition';
     rolesNeeded?: string[];
     requiredSkillIds?: string[];
     requiredInterestIds?: string[];

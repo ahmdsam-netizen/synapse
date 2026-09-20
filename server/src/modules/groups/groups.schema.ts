@@ -23,3 +23,13 @@ export const removeMemberParamSchema = z.object({
   id: z.string().uuid(),
   userId: z.string().uuid()
 });
+
+export const inviteUserSchema = z.object({
+  userId: z.string().uuid(),
+  note: z.string().max(1000).optional(),
+});
+
+export const inviteIdParamSchema = z.object({
+  inviteId: z.string().uuid(),
+});
+

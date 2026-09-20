@@ -37,7 +37,7 @@ export function CreatePostingOnlyModal({
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [rolesNeededText, setRolesNeededText] = useState('');
-  const [slotsTotal, setSlotsTotal] = useState(2);
+  const [community, setCommunity] = useState<'project' | 'hackathon' | 'competition'>('project');
   const [expiresInHours, setExpiresInHours] = useState<number>(72);
 
   // Selected Skills & Interests
@@ -112,10 +112,11 @@ export function CreatePostingOnlyModal({
         groupId: selectedGroupId,
         title: title.trim(),
         description: description.trim() || undefined,
+        community,
         rolesNeeded,
         requiredSkillIds: selectedSkills.map((s) => s.id),
         requiredInterestIds: selectedInterests.map((i) => i.id),
-        slotsTotal: Number(slotsTotal) || 1,
+        slotsTotal: 1,
         expiresInHours: Number(expiresInHours) || 72,
       });
     },
@@ -136,7 +137,7 @@ export function CreatePostingOnlyModal({
     setTitle('');
     setDescription('');
     setRolesNeededText('');
-    setSlotsTotal(2);
+    setCommunity('project');
     setExpiresInHours(72);
     setSelectedSkills([]);
     setSelectedInterests([]);
@@ -270,16 +271,16 @@ export function CreatePostingOnlyModal({
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-sm font-medium text-gray-900">Slots to Fill *</label>
-                <input
-                  type="number"
-                  min="1"
-                  max="50"
-                  required
-                  className="mt-1 block w-full rounded-md border border-gray-300 py-2 px-3 text-gray-900 shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 sm:text-sm"
-                  value={slotsTotal}
-                  onChange={(e) => setSlotsTotal(parseInt(e.target.value) || 1)}
-                />
+                <label className="block text-sm font-medium text-gray-900">Community / Type *</label>
+                <select
+                  value={community}
+                  onChange={(e) => setCommunity(e.target.value as any)}
+                  className="mt-1 block w-full rounded-md border border-gray-300 py-2 px-3 text-gray-900 shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 sm:text-sm bg-white"
+                >
+                  <option value="project">Project (#project)</option>
+                  <option value="hackathon">Hackathon (#hackathon)</option>
+                  <option value="competition">Competition (#competition)</option>
+                </select>
               </div>
 
               <div>
@@ -304,7 +305,7 @@ export function CreatePostingOnlyModal({
             </div>
           </div>
           <p className="text-xs text-gray-500 -mt-2">
-            Temporary post: automatically auto-deletes after the selected time or when all slots are filled.
+            Temporary post: automatically auto-deletes after the selected time or when an applicant is selected.
           </p>
 
           {/* Required Skills Search & Chips */}

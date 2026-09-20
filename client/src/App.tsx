@@ -18,8 +18,8 @@ export default function App() {
       <Route element={<ProtectedRoute />}>
         <Route element={<AppLayout />}>
           <Route path="/" element={<HomePage />} />
-          <Route path="/recommendations" element={<RecommendationsPage />} />
           <Route path="/boards" element={<BoardPage />} />
+          <Route path="/recommendations" element={<RecommendationsPage />} />
           <Route path="/connections" element={<ConnectionsPage />} />
           <Route path="/profile/me" element={<ProfilePage />} />
           <Route path="/profile/:id" element={<ProfilePage />} />

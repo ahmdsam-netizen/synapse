@@ -24,6 +24,7 @@ export declare function getSimilarityRecs(userId: string, collegeId: string | nu
         interests: any;
         allSkills: any;
         allInterests: any;
+        connectionStatus: string;
     }[];
     nextCursor: string | null;
     hasMore: boolean;
@@ -55,6 +56,7 @@ export declare function getSecondDegreeRecs(userId: string, collegeId: string | 
         interests: any;
         allSkills: any;
         allInterests: any;
+        connectionStatus: string;
     }[];
     nextCursor: string | null;
     hasMore: boolean;

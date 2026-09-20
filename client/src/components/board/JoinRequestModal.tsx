@@ -9,9 +9,10 @@ interface JoinRequestModalProps {
   open: boolean;
   onClose: () => void;
   posting: BoardPosting;
+  onSuccess?: () => void;
 }
 
-export function JoinRequestModal({ open, onClose, posting }: JoinRequestModalProps) {
+export function JoinRequestModal({ open, onClose, posting, onSuccess }: JoinRequestModalProps) {
   const [message, setMessage] = useState('');
   const queryClient = useQueryClient();
 
@@ -21,6 +22,7 @@ export function JoinRequestModal({ open, onClose, posting }: JoinRequestModalPro
       toast.success('Request sent successfully!');
       queryClient.invalidateQueries({ queryKey: ['board'] });
       queryClient.invalidateQueries({ queryKey: ['my-requests'] });
+      if (onSuccess) onSuccess();
       onClose();
     },
     onError: (err: any) => {

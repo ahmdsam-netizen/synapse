@@ -3,7 +3,9 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { usersApi } from '../../api/users';
 import { connectionsApi } from '../../api/connections';
 import CompletenessBar from './CompletenessBar';
+import { InviteToGroupModal } from '../groups/InviteToGroupModal';
 import { getInitials } from '../../lib/utils';
+import { UserGroupIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 
 interface ProfileHeaderProps {
@@ -13,12 +15,14 @@ interface ProfileHeaderProps {
 
 export default function ProfileHeader({ profile, isOwnProfile }: ProfileHeaderProps) {
   const [isEditing, setIsEditing] = useState(false);
+  const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
   const [formData, setFormData] = useState({
     name: profile.name || `${profile.first_name || ''} ${profile.last_name || ''}`.trim(),
     bio: profile.bio || '',
     yearOfStudy: profile.yearOfStudy ?? profile.year_of_study ?? 1,
     branch: profile.branch || '',
     lookingFor: profile.lookingFor || profile.looking_for || 'none',
+    openToInvites: profile.openToInvites ?? profile.open_to_invites ?? true,
   });
 
   const queryClient = useQueryClient();
@@ -152,6 +156,19 @@ export default function ProfileHeader({ profile, isOwnProfile }: ProfileHeaderPr
                 placeholder="Write a short bio..."
               />
               
+              <div className="flex items-center gap-2 pt-1 pb-1">
+                <input
+                  type="checkbox"
+                  id="openToInvites"
+                  checked={formData.openToInvites}
+                  onChange={(e) => setFormData({...formData, openToInvites: e.target.checked})}
+                  className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500 cursor-pointer"
+                />
+                <label htmlFor="openToInvites" className="text-sm font-medium text-gray-700 cursor-pointer select-none">
+                  Open to group invitations from admins
+                </label>
+              </div>
+
               <div className="flex gap-2 justify-end">
                 <button
                   onClick={() => setIsEditing(false)}
@@ -184,21 +201,51 @@ export default function ProfileHeader({ profile, isOwnProfile }: ProfileHeaderPr
                   >
                     Edit Profile
                   </button>
-                ) : connectionStatus === 'connected' ? (
-                  <button onClick={() => removeMutation.mutate()} disabled={removeMutation.isPending} className="bg-green-100 hover:bg-red-100 text-green-800 hover:text-red-700 rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50">
-                    {removeMutation.isPending ? 'Disconnecting...' : 'Connected · Disconnect'}
-                  </button>
-                ) : connectionStatus === 'pending_sent' ? (
-                  <span className="bg-gray-100 text-gray-600 rounded-lg px-4 py-2 text-sm font-medium">Request Sent</span>
-                ) : connectionStatus === 'pending_received' ? (
-                  <div className="flex gap-2">
-                    <button onClick={() => acceptMutation.mutate()} disabled={acceptMutation.isPending || declineMutation.isPending} className="bg-primary-600 hover:bg-primary-700 text-white rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50">Accept Request</button>
-                    <button onClick={() => declineMutation.mutate()} disabled={acceptMutation.isPending || declineMutation.isPending} className="bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50">Decline</button>
-                  </div>
                 ) : (
-                  <button onClick={() => connectMutation.mutate()} disabled={connectMutation.isPending} className="bg-primary-600 hover:bg-primary-700 text-white rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50">
-                    {connectMutation.isPending ? 'Sending...' : 'Connect'}
-                  </button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {connectionStatus === 'connected' ? (
+                      <button
+                        onClick={() => removeMutation.mutate()}
+                        disabled={removeMutation.isPending}
+                        className="bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50 cursor-pointer shadow-sm"
+                      >
+                        {removeMutation.isPending ? 'Disconnecting...' : 'Disconnect'}
+                      </button>
+                    ) : connectionStatus === 'pending_sent' ? (
+                      <span className="bg-gray-100 text-gray-600 rounded-lg px-4 py-2 text-sm font-medium">Request Sent</span>
+                    ) : connectionStatus === 'pending_received' ? (
+                      <div className="flex gap-2">
+                        <button onClick={() => acceptMutation.mutate()} disabled={acceptMutation.isPending || declineMutation.isPending} className="bg-primary-600 hover:bg-primary-700 text-white rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50">Accept Request</button>
+                        <button onClick={() => declineMutation.mutate()} disabled={acceptMutation.isPending || declineMutation.isPending} className="bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50">Decline</button>
+                      </div>
+                    ) : (
+                      <button onClick={() => connectMutation.mutate()} disabled={connectMutation.isPending} className="bg-primary-600 hover:bg-primary-700 text-white rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50">
+                        {connectMutation.isPending ? 'Sending...' : 'Connect'}
+                      </button>
+                    )}
+
+                    {/* Invite to Group button */}
+                    {(profile.openToInvites ?? profile.open_to_invites) !== false ? (
+                      <button
+                        type="button"
+                        onClick={() => setIsInviteModalOpen(true)}
+                        className="inline-flex items-center gap-1.5 bg-white border border-primary-600 text-primary-600 hover:bg-primary-50 rounded-lg px-3.5 py-2 text-sm font-medium transition-colors cursor-pointer shadow-sm"
+                      >
+                        <UserGroupIcon className="h-4 w-4" />
+                        <span>Invite to Group</span>
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled
+                        title="This student is not accepting group invitations"
+                        className="inline-flex items-center gap-1.5 bg-gray-100 border border-gray-200 text-gray-400 rounded-lg px-3.5 py-2 text-sm font-medium cursor-not-allowed"
+                      >
+                        <UserGroupIcon className="h-4 w-4" />
+                        <span>Invites Closed</span>
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
               
@@ -214,6 +261,19 @@ export default function ProfileHeader({ profile, isOwnProfile }: ProfileHeaderPr
                   </span>
                 )}
                 {getLookingForBadge(profile.lookingFor || profile.looking_for || 'none')}
+
+                {/* Open to invites badge */}
+                {(profile.openToInvites ?? profile.open_to_invites) !== false ? (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
+                    Open to Group Invites
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600 border border-gray-200">
+                    <span className="h-1.5 w-1.5 rounded-full bg-gray-400"></span>
+                    Not accepting invites
+                  </span>
+                )}
               </div>
               
               {profile.bio && (
@@ -228,6 +288,18 @@ export default function ProfileHeader({ profile, isOwnProfile }: ProfileHeaderPr
         <div className="mt-6 pt-6 border-t border-gray-100">
           <CompletenessBar score={profile.profileCompleteness ?? profile.completeness} />
         </div>
+      )}
+
+      {isInviteModalOpen && (
+        <InviteToGroupModal
+          open={isInviteModalOpen}
+          onClose={() => setIsInviteModalOpen(false)}
+          targetUser={{
+            id: profile.id,
+            name: displayName,
+            avatarUrl: profile.avatarUrl || profile.avatar_url,
+          }}
+        />
       )}
     </div>
   );

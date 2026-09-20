@@ -8,7 +8,7 @@ export const usersApi = {
   getProfile: (id: string) =>
     apiClient.get<{ user: UserProfile }>(`/users/${id}`),
 
-  updateProfile: (data: Partial<Pick<User, 'name' | 'bio' | 'avatarUrl' | 'yearOfStudy' | 'branch' | 'lookingFor'>>) =>
+  updateProfile: (data: Partial<Pick<User, 'name' | 'bio' | 'avatarUrl' | 'yearOfStudy' | 'branch' | 'lookingFor' | 'openToInvites'>>) =>
     apiClient.put<{ user: User }>('/users/me', data),
 
   addSkill: (dataOrId: string | { skillId?: string; name?: string; proficiency: string }, proficiency?: string) => {

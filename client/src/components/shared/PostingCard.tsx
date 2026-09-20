@@ -1,177 +1,194 @@
 import React from 'react';
-import { TrashIcon, ClockIcon, SparklesIcon } from '@heroicons/react/24/outline';
+import { SparklesIcon, ArrowTopRightOnSquareIcon } from '@heroicons/react/24/outline';
 import { BoardPosting } from '../../types';
 import { TagChip } from './TagChip';
-import { cn, formatTimeRemaining } from '../../lib/utils';
+import { timeAgo, getInitials, cn } from '../../lib/utils';
 import { useAuth } from '../../context/AuthContext';
 
 interface PostingCardProps {
-  posting: BoardPosting & { hasRequested?: boolean; isOwner?: boolean; pendingRequestCount?: number };
-  onRequestClick?: () => void;
-  onDeleteClick?: () => void;
+  posting: BoardPosting & {
+    hasRequested?: boolean;
+    isOwner?: boolean;
+    pendingRequestCount?: number;
+  };
+  onClick?: () => void;
   isMatchedTab?: boolean;
   isMyPost?: boolean;
 }
 
 export function PostingCard({
   posting,
-  onRequestClick,
-  onDeleteClick,
+  onClick,
   isMatchedTab = false,
   isMyPost = false,
 }: PostingCardProps) {
   const { user: currentUser } = useAuth();
-  const isSelfPost = isMyPost || Boolean(posting.isOwner) || (Boolean(currentUser?.id) && (posting.creatorId === currentUser?.id || (posting as any).creator_id === currentUser?.id));
+  const isSelfPost =
+    isMyPost ||
+    Boolean(posting.isOwner) ||
+    (Boolean(currentUser?.id) &&
+      (posting.creatorId === currentUser?.id ||
+        (posting as any).creator_id === currentUser?.id));
 
   const groupName = posting.groupName || (posting as any).group_name || 'Group';
   const rolesNeeded = posting.rolesNeeded || (posting as any).roles_needed || [];
-  const requiredSkills = posting.requiredSkills || (posting as any).required_skills || [];
-  const requiredInterests = posting.requiredInterests || (posting as any).required_interests || [];
-  const slotsFilled = posting.slotsFilled ?? (posting as any).slots_filled ?? 0;
-  const slotsTotal = posting.slotsTotal ?? (posting as any).slots_total ?? 0;
-  const hasRequested = posting.hasRequested ?? (posting as any).has_requested ?? false;
-  const expiresAt = posting.expiresAt || (posting as any).expires_at;
-  const timeRemaining = formatTimeRemaining(expiresAt);
+  const skills = posting.requiredSkills || (posting as any).required_skills || [];
+
+  const matchedSkills =
+    isMatchedTab &&
+    ((posting as any).matchedSkills || (posting as any).matched_skills)
+      ? (posting as any).matchedSkills || (posting as any).matched_skills
+      : [];
+  const matchedSkillIds = new Set(
+    matchedSkills.map((s: any) =>
+      typeof s === 'string' ? s : s.id || s.name
+    )
+  );
 
   const rawPct = posting.matchPercentage ?? (posting as any).match_percentage;
-  const matchPct = rawPct !== undefined && rawPct !== null
-    ? Math.round(rawPct)
-    : posting.semantic_match_score !== undefined
-      ? Math.round(posting.semantic_match_score * 100)
-      : (posting as any).semanticMatchScore !== undefined
-        ? Math.round((posting as any).semanticMatchScore * 100)
-        : posting.matchScore !== undefined
-          ? Math.round(posting.matchScore * 100)
-          : undefined;
-  
-  const matchedSkills = isMatchedTab && ((posting as any).matchedSkills || (posting as any).matched_skills) 
-    ? ((posting as any).matchedSkills || (posting as any).matched_skills) 
-    : [];
-  const matchedInterests = isMatchedTab && ((posting as any).matchedInterests || (posting as any).matched_interests) 
-    ? ((posting as any).matchedInterests || (posting as any).matched_interests) 
-    : [];
+  const matchPct =
+    rawPct !== undefined && rawPct !== null
+      ? Math.round(rawPct)
+      : posting.semantic_match_score !== undefined
+        ? Math.round(posting.semantic_match_score * 100)
+        : (posting as any).semanticMatchScore !== undefined
+          ? Math.round((posting as any).semanticMatchScore * 100)
+          : posting.matchScore !== undefined
+            ? Math.round(posting.matchScore * 100)
+            : undefined;
 
-  const matchedSkillIds = new Set(matchedSkills.map((s: any) => typeof s === 'string' ? s : s.id || s.name));
-  const matchedInterestIds = new Set(matchedInterests.map((i: any) => typeof i === 'string' ? i : i.id || i.name));
+  const uploadTime = timeAgo(posting.createdAt || (posting as any).created_at);
+  const community = ((posting.community || (posting as any).community || 'project') as string).toLowerCase();
 
   return (
-    <div className="flex flex-col gap-4 rounded-xl border border-gray-100 bg-white p-6 shadow-sm">
-      <div className="flex justify-between items-start gap-4">
-        <div>
-          <div className="flex items-center flex-wrap gap-2 mb-1">
-            <p className="text-xs font-medium text-gray-500">{groupName}</p>
-            {!isSelfPost && matchPct !== undefined && (
-              <span 
-                className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700 border border-emerald-200 shadow-2xs"
-                title={`${matchPct}% Compatibility Match`}
+    <div
+      onClick={onClick}
+      className="flex flex-col justify-between rounded-xl border border-gray-100 bg-white p-5 shadow-sm hover:shadow-md transition-shadow h-full cursor-pointer group"
+    >
+      <div>
+        {/* Top: Avatar/Group Icon & Info */}
+        <div className="flex items-start gap-3">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary-50 to-primary-100 border border-primary-200 text-primary-700 font-bold text-sm shadow-2xs">
+            {getInitials(groupName)}
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span
+                className={cn(
+                  'inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold border',
+                  community === 'hackathon'
+                    ? 'bg-purple-50 text-purple-700 border-purple-200'
+                    : community === 'competition'
+                      ? 'bg-amber-50 text-amber-700 border-amber-200'
+                      : 'bg-blue-50 text-blue-700 border-blue-200'
+                )}
               >
-                <SparklesIcon className="h-3 w-3 text-emerald-600" />
-                <span>{matchPct}% Match</span>
+                #{community}
               </span>
-            )}
-            {timeRemaining && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-orange-50 px-2 py-0.5 text-[11px] font-medium text-orange-700 border border-orange-200">
-                <ClockIcon className="h-3 w-3" />
-                <span>{timeRemaining}</span>
+              <span className="truncate text-xs text-gray-400">
+                • {uploadTime}
               </span>
+            </div>
+            <h4 className="font-semibold text-gray-900 truncate mt-0.5 text-sm" title={groupName}>
+              {groupName}
+            </h4>
+            {posting.collegeName && (
+              <p className="truncate text-xs text-gray-400">
+                {posting.collegeName}
+              </p>
             )}
-            {posting.pendingRequestCount !== undefined && posting.pendingRequestCount > 0 && (
-              <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700 border border-amber-200">
-                {posting.pendingRequestCount} pending request{posting.pendingRequestCount > 1 ? 's' : ''}
+          </div>
+        </div>
+
+        {/* Posting Title */}
+        <h3 className="mt-3 font-semibold text-gray-900 text-base line-clamp-1 group-hover:text-primary-600 transition-colors" title={posting.title}>
+          {posting.title}
+        </h3>
+
+        {/* Description */}
+        {posting.description ? (
+          <p className="mt-2 text-xs text-gray-600 line-clamp-2 leading-relaxed">
+            {posting.description}
+          </p>
+        ) : null}
+
+        {/* Roles Needed */}
+        {rolesNeeded && rolesNeeded.length > 0 && (
+          <div className="mt-3 flex flex-wrap items-center gap-1.5">
+            <span className="text-[11px] text-gray-400 font-medium shrink-0">Role:</span>
+            {rolesNeeded.slice(0, 3).map((role: string) => (
+              <TagChip key={role} label={role} variant="role" size="sm" />
+            ))}
+            {rolesNeeded.length > 3 && (
+              <span className="text-[10px] text-gray-400 font-medium self-center">
+                +{rolesNeeded.length - 3} more
               </span>
             )}
           </div>
-          <h3 className="text-lg font-semibold text-gray-900">{posting.title}</h3>
-        </div>
-        {isMyPost || onDeleteClick ? (
-          <button
-            onClick={onDeleteClick}
-            title="Delete this posting"
-            className="inline-flex items-center gap-1.5 shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-red-500"
-          >
-            <TrashIcon className="h-4 w-4" />
-            <span>Delete</span>
-          </button>
-        ) : (
-          <button
-            onClick={onRequestClick}
-            disabled={hasRequested}
-            className={cn(
-              'shrink-0 rounded-lg px-4 py-2 text-sm font-semibold shadow-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 transition-colors',
-              hasRequested
-                ? 'bg-gray-100 text-gray-500 cursor-not-allowed'
-                : 'bg-primary-600 text-white hover:bg-primary-700'
+        )}
+
+        {/* Required Skills */}
+        {skills && skills.length > 0 && (
+          <div className="mt-2.5 flex flex-wrap gap-1.5">
+            {skills.slice(0, 3).map((s: any, idx: number) => {
+              const sName = typeof s === 'string' ? s : s.name;
+              const sId = typeof s === 'string' ? s : s.id || s.name;
+              const isMatched = isMatchedTab && (matchedSkillIds.has(sId) || matchedSkillIds.has(sName));
+              return (
+                <TagChip
+                  key={idx}
+                  label={sName}
+                  variant="skill"
+                  size="sm"
+                  matched={isMatched}
+                />
+              );
+            })}
+            {skills.length > 3 && (
+              <span className="text-[10px] text-gray-400 font-medium self-center">
+                +{skills.length - 3} more
+              </span>
             )}
-          >
-            {hasRequested ? 'Requested' : 'Request to Join'}
-          </button>
+          </div>
         )}
       </div>
 
-      <p className="text-sm text-gray-600 line-clamp-2">{posting.description}</p>
-
-      {rolesNeeded && rolesNeeded.length > 0 && (
-        <div>
-          <p className="text-xs font-medium text-gray-700 mb-2">Roles Needed</p>
-          <div className="flex flex-wrap gap-2">
-            {rolesNeeded.map((role) => (
-              <TagChip key={role} label={role} variant="role" />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {requiredSkills && requiredSkills.length > 0 && (
-        <div>
-          <p className="text-xs font-medium text-gray-700 mb-2">Skills</p>
-          <div className="flex flex-wrap gap-2">
-            {requiredSkills.map((skill: any) => {
-              const skillName = typeof skill === 'string' ? skill : skill.name;
-              const skillId = typeof skill === 'string' ? skill : skill.id || skill.name;
-              return (
-                <TagChip 
-                  key={skillId} 
-                  label={skillName} 
-                  variant="skill" 
-                  matched={matchedSkillIds.has(skillId) || matchedSkillIds.has(skillName)} 
-                />
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {requiredInterests && requiredInterests.length > 0 && (
-        <div>
-          <p className="text-xs font-medium text-gray-700 mb-2">Interests</p>
-          <div className="flex flex-wrap gap-2">
-            {requiredInterests.map((interest: any) => {
-              const interestName = typeof interest === 'string' ? interest : interest.name;
-              const interestId = typeof interest === 'string' ? interest : interest.id || interest.name;
-              return (
-                <TagChip 
-                  key={interestId} 
-                  label={interestName} 
-                  variant="interest"
-                  matched={matchedInterestIds.has(interestId) || matchedInterestIds.has(interestName)}
-                />
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {slotsTotal && slotsTotal > 0 && (
-        <div className="mt-auto pt-4 flex items-center justify-between text-sm text-gray-500">
-          <span>{slotsFilled || 0} / {slotsTotal} slots filled</span>
-          <div className="h-2 w-24 overflow-hidden rounded-full bg-gray-100">
+      {/* Bottom Footer: Left match % or upload info & Right "View Detail" button */}
+      <div className="mt-4 pt-3 border-t border-gray-100 flex items-center justify-between gap-2">
+        {/* Left Info: Match % or status */}
+        <div className="flex items-center min-w-0">
+          {!isSelfPost && matchPct !== undefined ? (
             <div
-              className="h-full bg-primary-500"
-              style={{ width: `${Math.min(100, ((slotsFilled || 0) / slotsTotal) * 100)}%` }}
-            />
-          </div>
+              className="inline-flex items-center gap-1 shrink-0 rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700 border border-emerald-200"
+              title={`${matchPct}% Compatibility Match`}
+            >
+              <SparklesIcon className="w-3 h-3 text-emerald-600 shrink-0" />
+              <span>{matchPct}% Match</span>
+            </div>
+          ) : posting.pendingRequestCount !== undefined && posting.pendingRequestCount > 0 ? (
+            <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700 border border-amber-200 shrink-0">
+              {posting.pendingRequestCount} request{posting.pendingRequestCount > 1 ? 's' : ''}
+            </span>
+          ) : (
+            <span className="text-[11px] text-gray-400 shrink-0">
+              {uploadTime}
+            </span>
+          )}
         </div>
-      )}
+
+        {/* Right Button: View Detail */}
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            if (onClick) onClick();
+          }}
+          className="inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium text-primary-700 bg-primary-50 hover:bg-primary-100 transition-colors cursor-pointer"
+        >
+          <span>View Detail</span>
+          <ArrowTopRightOnSquareIcon className="h-3 w-3" />
+        </button>
+      </div>
     </div>
   );
 }

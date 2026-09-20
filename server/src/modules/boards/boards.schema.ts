@@ -4,16 +4,18 @@ export const createPostingSchema = z.object({
   groupId: z.string().uuid(),
   title: z.string().min(2).max(200),
   description: z.string().max(2000).optional(),
+  community: z.enum(['project', 'hackathon', 'competition']).optional().default('project'),
   rolesNeeded: z.array(z.string()).optional().default([]),
   requiredSkillIds: z.array(z.string().uuid()).optional().default([]),
   requiredInterestIds: z.array(z.string().uuid()).optional().default([]),
-  slotsTotal: z.coerce.number().min(1).max(100).optional().default(5),
+  slotsTotal: z.coerce.number().min(1).max(100).optional().default(1),
   expiresInHours: z.coerce.number().min(1).max(720).optional().default(72),
 });
 
 export const updatePostingSchema = z.object({
   title: z.string().min(2).max(200).optional(),
   description: z.string().max(2000).optional(),
+  community: z.enum(['project', 'hackathon', 'competition']).optional(),
   rolesNeeded: z.array(z.string()).optional(),
   requiredSkillIds: z.array(z.string().uuid()).optional(),
   requiredInterestIds: z.array(z.string().uuid()).optional(),
@@ -28,6 +30,7 @@ export const postingIdParamSchema = z.object({
 export const globalBoardQuerySchema = z.object({
   cursor: z.string().optional(),
   limit: z.coerce.number().min(1).max(30).optional().default(30),
+  community: z.string().optional(),
   skills: z.union([
     z.array(z.string()),
     z.string().transform(s => (s ? s.split(',').map(x => x.trim()).filter(Boolean) : []))
@@ -42,7 +45,8 @@ export const globalBoardQuerySchema = z.object({
 
 export const matchedBoardQuerySchema = z.object({
   cursor: z.string().optional(),
-  limit: z.coerce.number().min(1).max(30).optional().default(30)
+  limit: z.coerce.number().min(1).max(30).optional().default(30),
+  community: z.string().optional(),
 });
 
 export const joinRequestSchema = z.object({

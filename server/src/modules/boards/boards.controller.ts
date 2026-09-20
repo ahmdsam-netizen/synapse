@@ -15,14 +15,14 @@ export const getCollegeHandler = async (req: AuthRequest, res: Response) => {
 };
 
 export const getMatchedHandler = async (req: AuthRequest, res: Response) => {
-  const { cursor, limit } = req.query as any;
-  const result = await boardsService.getMatchedBoard(req.user!.id, req.user!.collegeId, cursor, Number(limit));
+  const { cursor, limit, community } = req.query as any;
+  const result = await boardsService.getMatchedBoard(req.user!.id, req.user!.collegeId, cursor, Number(limit), community);
   res.json({ status: 'success', data: result });
 };
 
 export const getMyPostingsHandler = async (req: AuthRequest, res: Response) => {
-  const { cursor, limit } = req.query as any;
-  const result = await boardsService.getMyPostings(req.user!.id, cursor, Number(limit));
+  const { cursor, limit, community } = req.query as any;
+  const result = await boardsService.getMyPostings(req.user!.id, cursor, Number(limit), community);
   res.json({ status: 'success', data: result });
 };
 

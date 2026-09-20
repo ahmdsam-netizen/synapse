@@ -33,7 +33,7 @@ export function CreateGroupModal({ open, onClose, initialStep = 1, existingGroup
     rolesNeeded: '',
     requiredSkills: '',
     requiredInterests: '',
-    slotsTotal: 1,
+    community: 'project' as 'project' | 'hackathon' | 'competition',
   });
 
   const createGroupMutation = useMutation({
@@ -57,10 +57,11 @@ export function CreateGroupModal({ open, onClose, initialStep = 1, existingGroup
         groupId: createdGroupId,
         title: postingData.title,
         description: postingData.description,
+        community: postingData.community,
         rolesNeeded: postingData.rolesNeeded.split(',').map(s => s.trim()).filter(Boolean),
         requiredSkillIds: [],
         requiredInterestIds: [],
-        slotsTotal: Number(postingData.slotsTotal) || 5,
+        slotsTotal: 1,
       });
     },
     onSuccess: () => {
@@ -77,7 +78,7 @@ export function CreateGroupModal({ open, onClose, initialStep = 1, existingGroup
   const handleClose = () => {
     setStep(initialStep);
     setGroupData({ name: '', description: '', visibility: 'global', maxMembers: 5 });
-    setPostingData({ title: '', description: '', rolesNeeded: '', requiredSkills: '', requiredInterests: '', slotsTotal: 1 });
+    setPostingData({ title: '', description: '', rolesNeeded: '', requiredSkills: '', requiredInterests: '', community: 'project' });
     onClose();
   };
 
@@ -224,14 +225,16 @@ export function CreateGroupModal({ open, onClose, initialStep = 1, existingGroup
             </div>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-900">Total Slots to Fill</label>
-            <input
-              type="number"
-              min="1"
-              className="mt-1 block w-1/3 rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-primary-600 sm:text-sm sm:leading-6 px-3"
-              value={postingData.slotsTotal}
-              onChange={e => setPostingData(prev => ({ ...prev, slotsTotal: parseInt(e.target.value) || 1 }))}
-            />
+            <label className="block text-sm font-medium text-gray-900">Community / Opportunity Type</label>
+            <select
+              value={postingData.community}
+              onChange={e => setPostingData(prev => ({ ...prev, community: e.target.value as any }))}
+              className="mt-1 block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-primary-600 sm:text-sm sm:leading-6 px-3 bg-white"
+            >
+              <option value="project">Project (#project)</option>
+              <option value="hackathon">Hackathon (#hackathon)</option>
+              <option value="competition">Competition (#competition)</option>
+            </select>
           </div>
           <div className="mt-6 flex justify-between">
             <button

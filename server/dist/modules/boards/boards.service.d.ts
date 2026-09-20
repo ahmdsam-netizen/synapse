@@ -30,6 +30,7 @@ export declare const getGlobalBoard: (cursor: string | undefined, limit: number,
         slots_total: any;
         slotsFilled: any;
         slots_filled: any;
+        community: any;
         expiresAt: any;
         expires_at: any;
         status: any;
@@ -42,7 +43,7 @@ export declare const getGlobalBoard: (cursor: string | undefined, limit: number,
         match_percentage: number | undefined;
     }[];
 }>;
-export declare const getMatchedBoard: (userId: string, collegeId: string | null, cursor: string | undefined, limit: number) => Promise<{
+export declare const getMatchedBoard: (userId: string, collegeId: string | null, cursor: string | undefined, limit: number, community?: string) => Promise<{
     nextCursor: string | null;
     hasMore: boolean;
     data: {
@@ -73,6 +74,7 @@ export declare const getMatchedBoard: (userId: string, collegeId: string | null,
         slots_total: any;
         slotsFilled: any;
         slots_filled: any;
+        community: any;
         expiresAt: any;
         expires_at: any;
         status: any;
@@ -85,7 +87,7 @@ export declare const getMatchedBoard: (userId: string, collegeId: string | null,
         match_percentage: number | undefined;
     }[];
 }>;
-export declare const getMyPostings: (userId: string, cursor: string | undefined, limit: number) => Promise<{
+export declare const getMyPostings: (userId: string, cursor: string | undefined, limit: number, community?: string) => Promise<{
     nextCursor: string | null;
     hasMore: boolean;
     data: {
@@ -116,6 +118,7 @@ export declare const getMyPostings: (userId: string, cursor: string | undefined,
         slots_total: any;
         slotsFilled: any;
         slots_filled: any;
+        community: any;
         expiresAt: any;
         expires_at: any;
         status: any;
@@ -177,6 +180,7 @@ export declare const getAllBoardsForEmbedding: () => Promise<{
     slots_total: any;
     slotsFilled: any;
     slots_filled: any;
+    community: any;
     expiresAt: any;
     expires_at: any;
     status: any;
@@ -216,6 +220,7 @@ export declare const getBoardForEmbedding: (postingId: string) => Promise<{
     slots_total: any;
     slotsFilled: any;
     slots_filled: any;
+    community: any;
     expiresAt: any;
     expires_at: any;
     status: any;

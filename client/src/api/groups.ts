@@ -1,5 +1,5 @@
 import apiClient from './client';
-import type { Group, PaginatedResponse } from '../types';
+import type { Group, GroupInvite, PaginatedResponse } from '../types';
 
 export interface GroupDetail extends Group {
   members: Array<{
@@ -31,4 +31,19 @@ export const groupsApi = {
 
   promoteMember: (groupId: string, userId: string) =>
     apiClient.post(`/groups/${groupId}/members/${userId}/promote`),
+
+  inviteMember: (groupId: string, data: { userId: string; note?: string }) =>
+    apiClient.post<{ status: string; data: any }>(`/groups/${groupId}/invites`, data),
+
+  getMyInvites: () =>
+    apiClient.get<{ status: string; data: GroupInvite[] }>('/groups/invites/me'),
+
+  acceptInvite: (inviteId: string) =>
+    apiClient.post<{ status: string; data: any }>(`/groups/invites/${inviteId}/accept`),
+
+  declineInvite: (inviteId: string) =>
+    apiClient.post<{ status: string; data: any }>(`/groups/invites/${inviteId}/decline`),
+
+  deleteGroup: (id: string) =>
+    apiClient.delete<{ status: string; message: string }>(`/groups/${id}`),
 };

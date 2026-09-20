@@ -6,6 +6,7 @@ export const updateProfileSchema = z.object({
     yearOfStudy: z.number().min(1).max(6).optional(),
     branch: z.string().max(100).optional(),
     lookingFor: z.enum(['project', 'event', 'both', 'none']).optional(),
+    openToInvites: z.boolean().optional(),
 });
 export const addSkillSchema = z.object({
     skillId: z.string().uuid().optional(),
