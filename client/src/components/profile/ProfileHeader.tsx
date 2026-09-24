@@ -88,15 +88,15 @@ export default function ProfileHeader({ profile, isOwnProfile }: ProfileHeaderPr
 
   const getLookingForBadge = (val: string) => {
     switch (val) {
-      case 'project': return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">Looking for Projects</span>;
-      case 'event': return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">Looking for Events</span>;
-      case 'both': return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">Open to Projects & Events</span>;
-      default: return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">Not looking right now</span>;
+      case 'project': return <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-medium bg-primary-50 text-primary-800 border border-primary-200">Looking for Projects</span>;
+      case 'event': return <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-medium bg-gray-100 text-gray-800 border border-gray-200">Looking for Events</span>;
+      case 'both': return <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-medium bg-primary-100 text-primary-900 border border-primary-300">Open to Projects & Events</span>;
+      default: return <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-medium bg-gray-100 text-gray-600 border border-gray-200">Not looking right now</span>;
     }
   };
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 relative">
+    <div className="bg-white rounded-xl border border-gray-200 p-6 relative">
       <div className="flex flex-col sm:flex-row gap-6 items-start sm:items-center">
         <div className="flex-shrink-0">
           {profile.avatarUrl || profile.avatar_url ? (
@@ -264,12 +264,12 @@ export default function ProfileHeader({ profile, isOwnProfile }: ProfileHeaderPr
 
                 {/* Open to invites badge */}
                 {(profile.openToInvites ?? profile.open_to_invites) !== false ? (
-                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
-                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-xs font-medium bg-primary-50 text-primary-800 border border-primary-200">
+                    <span className="h-1.5 w-1.5 rounded-full bg-primary-600"></span>
                     Open to Group Invites
                   </span>
                 ) : (
-                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600 border border-gray-200">
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-xs font-medium bg-gray-100 text-gray-700 border border-gray-200">
                     <span className="h-1.5 w-1.5 rounded-full bg-gray-400"></span>
                     Not accepting invites
                   </span>

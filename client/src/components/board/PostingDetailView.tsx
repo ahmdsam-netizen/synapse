@@ -2,7 +2,6 @@ import React from 'react';
 import {
   ArrowLeftIcon,
   ClockIcon,
-  SparklesIcon,
   TrashIcon,
   CheckIcon,
 } from '@heroicons/react/24/outline';
@@ -100,17 +99,6 @@ export function PostingDetailView({
         {/* Header Metadata */}
         <div className="space-y-3 border-b border-gray-100 pb-6">
           <div className="flex flex-wrap items-center gap-2">
-            <span
-              className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold border ${
-                community === 'hackathon'
-                  ? 'bg-purple-50 text-purple-700 border-purple-200'
-                  : community === 'competition'
-                    ? 'bg-amber-50 text-amber-700 border-amber-200'
-                    : 'bg-blue-50 text-blue-700 border-blue-200'
-              }`}
-            >
-              #{community}
-            </span>
             <span className="font-semibold text-primary-700 bg-primary-50 px-3 py-1 rounded-md text-xs sm:text-sm">
               {groupName}
             </span>
@@ -119,22 +107,21 @@ export function PostingDetailView({
             </span>
             {!isSelfPost && matchPct !== undefined && (
               <span
-                className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 border border-emerald-200 shadow-2xs"
-                title={`${matchPct}% Compatibility Match`}
+                className="inline-flex items-center rounded-md bg-primary-50 px-2.5 py-1 text-xs font-semibold text-primary-800 border border-primary-200"
+                title={`${matchPct}% Skill Overlap`}
               >
-                <SparklesIcon className="h-3.5 w-3.5 text-emerald-600" />
-                <span>{matchPct}% Match</span>
+                <span>{matchPct}% Skill Overlap</span>
               </span>
             )}
             {timeRemaining && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-orange-50 px-3 py-1 text-xs font-medium text-orange-700 border border-orange-200">
+              <span className="inline-flex items-center gap-1 rounded-md bg-orange-50 px-2.5 py-1 text-xs font-medium text-orange-700 border border-orange-200">
                 <ClockIcon className="h-3.5 w-3.5" />
                 <span>Expires in {timeRemaining}</span>
               </span>
             )}
             {posting.pendingRequestCount !== undefined &&
               posting.pendingRequestCount > 0 && (
-                <span className="inline-flex items-center rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 border border-amber-200">
+                <span className="inline-flex items-center rounded-md bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 border border-amber-200">
                   {posting.pendingRequestCount} pending request
                   {posting.pendingRequestCount > 1 ? 's' : ''}
                 </span>
@@ -165,7 +152,7 @@ export function PostingDetailView({
                   className={`inline-flex items-center gap-2 rounded-lg px-6 py-2.5 text-sm font-semibold shadow-sm transition-all cursor-pointer ${
                     hasRequested
                       ? 'bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200'
-                      : 'bg-primary-600 hover:bg-primary-700 text-white shadow-primary-500/20 shadow-md'
+                      : 'bg-primary-600 hover:bg-primary-700 text-white'
                   }`}
                 >
                   {hasRequested ? (
@@ -280,7 +267,7 @@ export function PostingDetailView({
               className={`rounded-lg px-6 py-2.5 text-sm font-semibold shadow-sm transition-all cursor-pointer ${
                 hasRequested
                   ? 'bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200'
-                  : 'bg-primary-600 hover:bg-primary-700 text-white shadow-primary-500/20 shadow-md'
+                  : 'bg-primary-600 hover:bg-primary-700 text-white'
               }`}
             >
               {hasRequested ? 'Request Sent' : 'Request to Join'}

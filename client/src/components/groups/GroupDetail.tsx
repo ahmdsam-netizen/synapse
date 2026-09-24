@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { Dialog, DialogPanel, DialogTitle, DialogBackdrop, TabGroup, TabList, Tab, TabPanels, TabPanel } from '@headlessui/react';
-import { XMarkIcon, TrashIcon } from '@heroicons/react/24/outline';
+import { XMarkIcon, TrashIcon, ClockIcon } from '@heroicons/react/24/outline';
 import { groupsApi } from '../../api/groups';
 import { StatusBadge } from '../shared/StatusBadge';
 import { MemberList } from './MemberList';
@@ -10,6 +10,7 @@ import { AdminRequestQueue } from '../board/AdminRequestQueue';
 import { ChatPlaceholder } from './ChatPlaceholder';
 import { CreatePostingOnlyModal } from '../board/CreatePostingOnlyModal';
 import { Modal } from '../shared/Modal';
+import { cn, formatTimeRemaining } from '../../lib/utils';
 
 interface GroupDetailProps {
   groupId: string;
@@ -70,6 +71,7 @@ export function GroupDetail({ groupId, onClose }: GroupDetailProps) {
   const memberCount = groupDetail?.memberCount ?? groupDetail?.member_count ?? groupDetail?.members?.length ?? 0;
   const maxMembers = groupDetail?.maxMembers ?? groupDetail?.max_members;
   const pendingRequests = groupDetail?.pendingRequestCount ?? groupDetail?.pending_request_count ?? 0;
+  const timeLeft = formatTimeRemaining(groupDetail?.expiresAt || groupDetail?.expires_at);
 
   return (
     <Dialog open={true} onClose={onClose} className="relative z-50">
@@ -107,13 +109,26 @@ export function GroupDetail({ groupId, onClose }: GroupDetailProps) {
                   </div>
                   
                   {!isPending && groupDetail && (
-                    <div className="mt-4 flex flex-wrap gap-2">
+                    <div className="mt-4 flex flex-wrap items-center gap-2">
                       <StatusBadge
                         status={groupDetail.status === 'open' ? 'open' : 'closed'}
                       />
                       <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700 capitalize">
                         {groupDetail.visibility}
                       </span>
+                      {timeLeft && (
+                        <span
+                          className={cn(
+                            'inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium',
+                            timeLeft === 'Expired'
+                              ? 'bg-red-50 text-red-700 border border-red-200'
+                              : 'bg-amber-50 text-amber-700 border border-amber-200'
+                          )}
+                        >
+                          <ClockIcon className="h-3.5 w-3.5" />
+                          {timeLeft}
+                        </span>
+                      )}
                       <span className="text-sm text-gray-500">
                         {memberCount} {maxMembers ? `/ ${maxMembers}` : ''} Members
                       </span>

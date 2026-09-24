@@ -1,5 +1,5 @@
 import React from 'react';
-import { SparklesIcon, ArrowTopRightOnSquareIcon } from '@heroicons/react/24/outline';
+import { ArrowTopRightOnSquareIcon } from '@heroicons/react/24/outline';
 import { BoardPosting } from '../../types';
 import { TagChip } from './TagChip';
 import { timeAgo, getInitials, cn } from '../../lib/utils';
@@ -32,18 +32,6 @@ export function PostingCard({
 
   const groupName = posting.groupName || (posting as any).group_name || 'Group';
   const rolesNeeded = posting.rolesNeeded || (posting as any).roles_needed || [];
-  const skills = posting.requiredSkills || (posting as any).required_skills || [];
-
-  const matchedSkills =
-    isMatchedTab &&
-    ((posting as any).matchedSkills || (posting as any).matched_skills)
-      ? (posting as any).matchedSkills || (posting as any).matched_skills
-      : [];
-  const matchedSkillIds = new Set(
-    matchedSkills.map((s: any) =>
-      typeof s === 'string' ? s : s.id || s.name
-    )
-  );
 
   const rawPct = posting.matchPercentage ?? (posting as any).match_percentage;
   const matchPct =
@@ -63,30 +51,18 @@ export function PostingCard({
   return (
     <div
       onClick={onClick}
-      className="flex flex-col justify-between rounded-xl border border-gray-100 bg-white p-5 shadow-sm hover:shadow-md transition-shadow h-full cursor-pointer group"
+      className="flex flex-col justify-between rounded-xl border border-gray-200 bg-white p-5 hover:border-gray-300 transition-colors h-full cursor-pointer group"
     >
       <div>
         {/* Top: Avatar/Group Icon & Info */}
         <div className="flex items-start gap-3">
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary-50 to-primary-100 border border-primary-200 text-primary-700 font-bold text-sm shadow-2xs">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-primary-50 border border-primary-200 text-primary-700 font-bold text-sm shadow-2xs">
             {getInitials(groupName)}
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5 flex-wrap">
-              <span
-                className={cn(
-                  'inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold border',
-                  community === 'hackathon'
-                    ? 'bg-purple-50 text-purple-700 border-purple-200'
-                    : community === 'competition'
-                      ? 'bg-amber-50 text-amber-700 border-amber-200'
-                      : 'bg-blue-50 text-blue-700 border-blue-200'
-                )}
-              >
-                #{community}
-              </span>
-              <span className="truncate text-xs text-gray-400">
-                • {uploadTime}
+              <span className="truncate text-xs text-gray-500 font-medium">
+                {uploadTime}
               </span>
             </div>
             <h4 className="font-semibold text-gray-900 truncate mt-0.5 text-sm" title={groupName}>
@@ -105,13 +81,6 @@ export function PostingCard({
           {posting.title}
         </h3>
 
-        {/* Description */}
-        {posting.description ? (
-          <p className="mt-2 text-xs text-gray-600 line-clamp-2 leading-relaxed">
-            {posting.description}
-          </p>
-        ) : null}
-
         {/* Roles Needed */}
         {rolesNeeded && rolesNeeded.length > 0 && (
           <div className="mt-3 flex flex-wrap items-center gap-1.5">
@@ -126,31 +95,6 @@ export function PostingCard({
             )}
           </div>
         )}
-
-        {/* Required Skills */}
-        {skills && skills.length > 0 && (
-          <div className="mt-2.5 flex flex-wrap gap-1.5">
-            {skills.slice(0, 3).map((s: any, idx: number) => {
-              const sName = typeof s === 'string' ? s : s.name;
-              const sId = typeof s === 'string' ? s : s.id || s.name;
-              const isMatched = isMatchedTab && (matchedSkillIds.has(sId) || matchedSkillIds.has(sName));
-              return (
-                <TagChip
-                  key={idx}
-                  label={sName}
-                  variant="skill"
-                  size="sm"
-                  matched={isMatched}
-                />
-              );
-            })}
-            {skills.length > 3 && (
-              <span className="text-[10px] text-gray-400 font-medium self-center">
-                +{skills.length - 3} more
-              </span>
-            )}
-          </div>
-        )}
       </div>
 
       {/* Bottom Footer: Left match % or upload info & Right "View Detail" button */}
@@ -159,14 +103,13 @@ export function PostingCard({
         <div className="flex items-center min-w-0">
           {!isSelfPost && matchPct !== undefined ? (
             <div
-              className="inline-flex items-center gap-1 shrink-0 rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700 border border-emerald-200"
-              title={`${matchPct}% Compatibility Match`}
+              className="inline-flex items-center shrink-0 rounded-md bg-primary-50 px-2 py-0.5 text-[11px] font-semibold text-primary-800 border border-primary-200"
+              title={`${matchPct}% Skill Overlap`}
             >
-              <SparklesIcon className="w-3 h-3 text-emerald-600 shrink-0" />
-              <span>{matchPct}% Match</span>
+              <span>{matchPct}% Skill Overlap</span>
             </div>
           ) : posting.pendingRequestCount !== undefined && posting.pendingRequestCount > 0 ? (
-            <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700 border border-amber-200 shrink-0">
+            <span className="inline-flex items-center rounded-md bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700 border border-amber-200 shrink-0">
               {posting.pendingRequestCount} request{posting.pendingRequestCount > 1 ? 's' : ''}
             </span>
           ) : (

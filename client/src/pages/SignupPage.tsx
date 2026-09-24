@@ -66,8 +66,8 @@ export default function SignupPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-primary-50 px-4 py-12 sm:px-6 lg:px-8">
-      <div className="w-full max-w-md space-y-8 rounded-xl bg-white p-8 shadow-sm">
+    <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4 py-12 sm:px-6 lg:px-8">
+      <div className="w-full max-w-md space-y-8 rounded-xl bg-white p-8 border border-gray-200">
         <div>
           <h2 className="mt-6 text-center text-3xl font-bold tracking-tight text-gray-900">
             Create your account
@@ -183,6 +183,18 @@ export default function SignupPage() {
               {isSubmitting ? 'Creating account...' : 'Sign up'}
             </button>
           </div>
+
+          <p className="mt-4 text-center text-xs text-gray-500">
+            By creating an account, you agree to our{' '}
+            <Link to="/terms" className="font-medium text-primary-600 hover:text-primary-500 underline underline-offset-2">
+              Terms of Service
+            </Link>{' '}
+            and{' '}
+            <Link to="/privacy" className="font-medium text-primary-600 hover:text-primary-500 underline underline-offset-2">
+              Privacy Policy
+            </Link>
+            .
+          </p>
         </form>
       </div>
     </div>

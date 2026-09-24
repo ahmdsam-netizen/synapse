@@ -236,7 +236,7 @@ export function FilterPanel({ filters, onChange, onApply, onClear, isSearching }
           {hasUnappliedChanges ? (
             <span className="text-amber-600 font-medium flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-amber-500" />
-              Options modified — click Search to apply
+              Options modified - click Search to apply
             </span>
           ) : activeFilterCount > 0 ? (
             <span className="text-gray-600 font-medium">

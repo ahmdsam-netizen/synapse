@@ -78,11 +78,11 @@ export default function HomePage() {
       <div className="mb-8 flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">#myGroups</h1>
-          <p className="mt-1 text-sm text-gray-500">Manage your active collaborations</p>
+          <p className="mt-1 text-sm text-gray-500">Teams and engineering projects you are actively participating in</p>
         </div>
         <button
           onClick={() => setIsCreateModalOpen(true)}
-          className="inline-flex items-center justify-center rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+          className="inline-flex items-center justify-center rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-primary-700 focus:outline-none focus:ring-1 focus:ring-primary-600 cursor-pointer"
         >
           Create Group
         </button>
@@ -108,10 +108,10 @@ export default function HomePage() {
         </div>
       ) : (
         <EmptyState
-          title="You haven't joined any groups yet"
-          description="Find a project that matches your skills or create your own group to get started."
+          title="No Active Projects"
+          description="Explore open postings on the campus board to find a team matching your skills, or initialize a new group."
           action={{
-            label: 'Browse Board',
+            label: 'Browse Project Board',
             onClick: () => window.location.href = '/boards',
           }}
         />
@@ -122,10 +122,10 @@ export default function HomePage() {
         <div className="flex items-center justify-between mb-6">
           <div>
             <h2 className="text-xl font-bold text-gray-900">#groupInvites</h2>
-            <p className="mt-1 text-sm text-gray-500">Invitations received from group admins to join their teams</p>
+            <p className="mt-1 text-sm text-gray-500">Direct invitations from project leads to join their engineering teams</p>
           </div>
           {pendingInvitesCount > 0 && (
-            <span className="rounded-full bg-primary-100 px-3 py-1 text-xs font-semibold text-primary-700">
+            <span className="rounded-md bg-primary-50 px-2.5 py-0.5 text-xs font-semibold text-primary-800 border border-primary-200">
               {pendingInvitesCount} pending
             </span>
           )}
@@ -228,7 +228,10 @@ export default function HomePage() {
       </div>
 
       <div className="mt-12">
-        <h2 className="mb-6 text-xl font-bold text-gray-900">#myJoinRequests</h2>
+        <div className="mb-6">
+          <h2 className="text-xl font-bold text-gray-900">#myJoinRequests</h2>
+          <p className="mt-1 text-sm text-gray-500">Track status of your membership applications to external engineering teams</p>
+        </div>
         {isLoadingRequests ? (
           <div className="space-y-4">
             {[...Array(2)].map((_, i) => (
@@ -265,6 +268,7 @@ export default function HomePage() {
         ) : (
           <div className="rounded-xl border border-gray-200 bg-gray-50 p-8 text-center">
             <p className="text-sm text-gray-500">No outgoing join requests.</p>
+            <p className="text-xs text-gray-400 mt-1">Applications you submit to join project boards or groups will appear here.</p>
           </div>
         )}
       </div>

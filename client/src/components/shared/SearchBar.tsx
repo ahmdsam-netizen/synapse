@@ -62,12 +62,12 @@ export function SearchBar({
         onChange={handleChange}
         onKeyDown={handleKeyDown}
         placeholder={placeholder}
-        className="w-full pl-10 pr-10 py-3 bg-white border border-gray-200 rounded-xl text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 shadow-sm transition-all"
+        className="w-full pl-10 pr-10 py-3 bg-white border border-gray-200 rounded-xl text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600 transition-colors"
       />
       {localValue && (
         <button
           onClick={handleClear}
-          className="absolute right-3 p-1 rounded-full text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+          className="absolute right-3 p-1 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
         >
           <XMarkIcon className="w-4 h-4" />
         </button>

@@ -7,6 +7,7 @@ export declare const createGroupSchema: z.ZodObject<{
         global: "global";
     }>;
     maxMembers: z.ZodDefault<z.ZodOptional<z.ZodCoercedNumber<unknown>>>;
+    durationDays: z.ZodDefault<z.ZodOptional<z.ZodCoercedNumber<unknown>>>;
 }, z.core.$strip>;
 export declare const updateGroupSchema: z.ZodObject<{
     name: z.ZodOptional<z.ZodString>;

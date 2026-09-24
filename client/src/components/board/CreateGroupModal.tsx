@@ -23,7 +23,8 @@ export function CreateGroupModal({ open, onClose, initialStep = 1, existingGroup
     name: '',
     description: '',
     visibility: 'global' as 'global' | 'college',
-    maxMembers: 5,
+    maxMembers: 8,
+    durationDays: 7,
   });
 
   // Posting Form State
@@ -37,7 +38,7 @@ export function CreateGroupModal({ open, onClose, initialStep = 1, existingGroup
   });
 
   const createGroupMutation = useMutation({
-    mutationFn: () => groupsApi.create(groupData),
+    mutationFn: () => groupsApi.create({ ...groupData, maxMembers: 8 }),
     onSuccess: (res) => {
       const gId = (res.data as any)?.group?.id || (res.data as any)?.id;
       setCreatedGroupId(gId);
@@ -59,8 +60,8 @@ export function CreateGroupModal({ open, onClose, initialStep = 1, existingGroup
         description: postingData.description,
         community: postingData.community,
         rolesNeeded: postingData.rolesNeeded.split(',').map(s => s.trim()).filter(Boolean),
-        requiredSkillIds: [],
-        requiredInterestIds: [],
+        requiredSkillIds: postingData.requiredSkills.split(',').map(s => s.trim()).filter(Boolean),
+        requiredInterestIds: postingData.requiredInterests.split(',').map(s => s.trim()).filter(Boolean),
         slotsTotal: 1,
       });
     },
@@ -77,7 +78,7 @@ export function CreateGroupModal({ open, onClose, initialStep = 1, existingGroup
 
   const handleClose = () => {
     setStep(initialStep);
-    setGroupData({ name: '', description: '', visibility: 'global', maxMembers: 5 });
+    setGroupData({ name: '', description: '', visibility: 'global', maxMembers: 8, durationDays: 7 });
     setPostingData({ title: '', description: '', rolesNeeded: '', requiredSkills: '', requiredInterests: '', community: 'project' });
     onClose();
   };
@@ -105,52 +106,94 @@ export function CreateGroupModal({ open, onClose, initialStep = 1, existingGroup
       open={open} 
       onClose={handleClose} 
       title={step === 1 ? 'Create New Group' : 'Create Group Posting'}
-      size="md"
+      size="lg"
     >
       {step === 1 && (
-        <form onSubmit={handleGroupSubmit} className="space-y-4">
+        <form onSubmit={handleGroupSubmit} className="space-y-5 p-1">
           <div>
-            <label className="block text-sm font-medium text-gray-900">Group Name *</label>
+            <label className="block text-sm font-semibold text-gray-900 mb-1">Group Name *</label>
             <input
               type="text"
               required
-              className="mt-1 block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-primary-600 sm:text-sm sm:leading-6 px-3"
+              className="block w-full rounded-lg border border-gray-300 py-2.5 px-3.5 text-gray-900 shadow-xs focus:border-primary-600 focus:outline-none focus:ring-1 focus:ring-primary-600 sm:text-sm"
               value={groupData.name}
               onChange={e => setGroupData(prev => ({ ...prev, name: e.target.value }))}
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-900">Description</label>
+            <label className="block text-sm font-semibold text-gray-900 mb-1">Description</label>
             <textarea
-              className="mt-1 block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-primary-600 sm:text-sm sm:leading-6 px-3"
+              className="block w-full rounded-lg border border-gray-300 py-2.5 px-3.5 text-gray-900 shadow-xs focus:border-primary-600 focus:outline-none focus:ring-1 focus:ring-primary-600 sm:text-sm"
               rows={3}
               value={groupData.description}
               onChange={e => setGroupData(prev => ({ ...prev, description: e.target.value }))}
             />
           </div>
-          <div className="flex gap-4">
-            <div className="flex-1">
-              <label className="block text-sm font-medium text-gray-900">Visibility</label>
-              <select
-                className="mt-1 block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-primary-600 sm:text-sm sm:leading-6 px-3 bg-white"
-                value={groupData.visibility}
-                onChange={e => setGroupData(prev => ({ ...prev, visibility: e.target.value as 'global' | 'college' }))}
+
+          {/* Visibility Selector Buttons */}
+          <div>
+            <label className="block text-sm font-semibold text-gray-900 mb-1.5">Visibility *</label>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setGroupData((prev) => ({ ...prev, visibility: 'global' }))}
+                className={cn(
+                  "py-3 px-4 rounded-lg border text-sm font-semibold transition-colors cursor-pointer text-left flex flex-col justify-center",
+                  groupData.visibility === 'global'
+                    ? "bg-primary-50 border-primary-600 text-primary-900 shadow-xs"
+                    : "bg-white border-gray-200 text-gray-700 hover:border-gray-300 hover:bg-gray-50"
+                )}
               >
-                <option value="global">Global</option>
-                <option value="college">College</option>
-              </select>
+                <span>#global</span>
+                <span className="text-[11px] font-normal text-gray-500 mt-0.5">Open to all verified colleges</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setGroupData((prev) => ({ ...prev, visibility: 'college' }))}
+                className={cn(
+                  "py-3 px-4 rounded-lg border text-sm font-semibold transition-colors cursor-pointer text-left flex flex-col justify-center",
+                  groupData.visibility === 'college'
+                    ? "bg-primary-50 border-primary-600 text-primary-900 shadow-xs"
+                    : "bg-white border-gray-200 text-gray-700 hover:border-gray-300 hover:bg-gray-50"
+                )}
+              >
+                <span>#college</span>
+                <span className="text-[11px] font-normal text-gray-500 mt-0.5">Restricted to your campus only</span>
+              </button>
             </div>
-            <div className="w-1/3">
-              <label className="block text-sm font-medium text-gray-900">Max Members</label>
-              <input
-                type="number"
-                min="2"
-                max="100"
-                className="mt-1 block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-primary-600 sm:text-sm sm:leading-6 px-3"
-                value={groupData.maxMembers}
-                onChange={e => setGroupData(prev => ({ ...prev, maxMembers: parseInt(e.target.value) || 5 }))}
-              />
+          </div>
+
+          {/* Duration Selector Buttons */}
+          <div>
+            <label className="block text-sm font-semibold text-gray-900 mb-1.5">Duration *</label>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+              {[
+                { days: 1, label: '1 Day', sub: 'Flash' },
+                { days: 7, label: '7 Days', sub: '1 Week' },
+                { days: 15, label: '15 Days', sub: '2 Weeks' },
+                { days: 30, label: '30 Days', sub: '1 Month' },
+              ].map((d) => (
+                <button
+                  key={d.days}
+                  type="button"
+                  onClick={() => setGroupData((prev) => ({ ...prev, durationDays: d.days }))}
+                  className={cn(
+                    "py-2.5 px-3 rounded-lg border text-sm font-semibold transition-colors cursor-pointer text-center flex flex-col items-center justify-center",
+                    groupData.durationDays === d.days
+                      ? "bg-primary-50 border-primary-600 text-primary-900 shadow-xs"
+                      : "bg-white border-gray-200 text-gray-700 hover:border-gray-300 hover:bg-gray-50"
+                  )}
+                >
+                  <span>{d.label}</span>
+                  <span className="text-[10px] font-normal text-gray-500 mt-0.5">{d.sub}</span>
+                </button>
+              ))}
             </div>
+          </div>
+
+          <div className="flex items-center justify-between text-xs text-gray-600 bg-gray-50 p-3 rounded-lg border border-gray-200">
+            <span>Capacity: <strong>Max 8 members</strong></span>
+            <span>Expires after: <strong>{groupData.durationDays} day{groupData.durationDays > 1 ? 's' : ''}</strong></span>
           </div>
           <div className="mt-6 flex justify-end gap-3">
             <button
@@ -172,75 +215,64 @@ export function CreateGroupModal({ open, onClose, initialStep = 1, existingGroup
       )}
 
       {step === 2 && (
-        <form onSubmit={handlePostingSubmit} className="space-y-4">
+        <form onSubmit={handlePostingSubmit} className="space-y-4 p-1">
           <div>
-            <label className="block text-sm font-medium text-gray-900">Posting Title *</label>
+            <label className="block text-sm font-semibold text-gray-900 mb-1">Posting Title *</label>
             <input
               type="text"
               required
-              className="mt-1 block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-primary-600 sm:text-sm sm:leading-6 px-3"
+              placeholder="e.g. Seeking Full-Stack Developer for EdTech Startup"
+              className="block w-full rounded-lg border border-gray-300 py-2.5 px-3.5 text-gray-900 shadow-xs focus:border-primary-600 focus:outline-none focus:ring-1 focus:ring-primary-600 sm:text-sm"
               value={postingData.title}
               onChange={e => setPostingData(prev => ({ ...prev, title: e.target.value }))}
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-900">Description</label>
+            <label className="block text-sm font-semibold text-gray-900 mb-1">Description</label>
             <textarea
-              className="mt-1 block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-primary-600 sm:text-sm sm:leading-6 px-3"
+              className="block w-full rounded-lg border border-gray-300 py-2.5 px-3.5 text-gray-900 shadow-xs focus:border-primary-600 focus:outline-none focus:ring-1 focus:ring-primary-600 sm:text-sm"
               rows={2}
               value={postingData.description}
               onChange={e => setPostingData(prev => ({ ...prev, description: e.target.value }))}
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-900">Roles Needed (comma separated)</label>
+            <label className="block text-sm font-semibold text-gray-900 mb-1">Roles Needed (comma separated)</label>
             <input
               type="text"
               placeholder="e.g. Frontend Developer, Designer"
-              className="mt-1 block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-primary-600 sm:text-sm sm:leading-6 px-3"
+              className="block w-full rounded-lg border border-gray-300 py-2.5 px-3.5 text-gray-900 shadow-xs focus:border-primary-600 focus:outline-none focus:ring-1 focus:ring-primary-600 sm:text-sm"
               value={postingData.rolesNeeded}
               onChange={e => setPostingData(prev => ({ ...prev, rolesNeeded: e.target.value }))}
             />
           </div>
-          <div className="flex gap-4">
-            <div className="flex-1">
-              <label className="block text-sm font-medium text-gray-900">Required Skills</label>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-semibold text-gray-900 mb-1">Required Skills</label>
               <input
                 type="text"
                 placeholder="e.g. React, Node.js"
-                className="mt-1 block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-primary-600 sm:text-sm sm:leading-6 px-3"
+                className="block w-full rounded-lg border border-gray-300 py-2.5 px-3.5 text-gray-900 shadow-xs focus:border-primary-600 focus:outline-none focus:ring-1 focus:ring-primary-600 sm:text-sm"
                 value={postingData.requiredSkills}
                 onChange={e => setPostingData(prev => ({ ...prev, requiredSkills: e.target.value }))}
               />
             </div>
-            <div className="flex-1">
-              <label className="block text-sm font-medium text-gray-900">Required Interests</label>
+            <div>
+              <label className="block text-sm font-semibold text-gray-900 mb-1">Required Interests</label>
               <input
                 type="text"
                 placeholder="e.g. AI, Web3"
-                className="mt-1 block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-primary-600 sm:text-sm sm:leading-6 px-3"
+                className="block w-full rounded-lg border border-gray-300 py-2.5 px-3.5 text-gray-900 shadow-xs focus:border-primary-600 focus:outline-none focus:ring-1 focus:ring-primary-600 sm:text-sm"
                 value={postingData.requiredInterests}
                 onChange={e => setPostingData(prev => ({ ...prev, requiredInterests: e.target.value }))}
               />
             </div>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-900">Community / Opportunity Type</label>
-            <select
-              value={postingData.community}
-              onChange={e => setPostingData(prev => ({ ...prev, community: e.target.value as any }))}
-              className="mt-1 block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-primary-600 sm:text-sm sm:leading-6 px-3 bg-white"
-            >
-              <option value="project">Project (#project)</option>
-              <option value="hackathon">Hackathon (#hackathon)</option>
-              <option value="competition">Competition (#competition)</option>
-            </select>
-          </div>
-          <div className="mt-6 flex justify-between">
+          <div className="mt-6 flex justify-between items-center">
             <button
               type="button"
               onClick={handleClose}
-              className="text-sm font-semibold text-gray-500 hover:text-gray-900"
+              className="text-sm font-semibold text-gray-500 hover:text-gray-900 cursor-pointer"
             >
               Skip for now
             </button>
@@ -248,7 +280,7 @@ export function CreateGroupModal({ open, onClose, initialStep = 1, existingGroup
               <button
                 type="submit"
                 disabled={createPostingMutation.isPending}
-                className="rounded-md bg-primary-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-primary-500 disabled:opacity-50"
+                className="rounded-lg bg-primary-600 px-5 py-2.5 text-sm font-semibold text-white shadow-xs hover:bg-primary-700 disabled:opacity-50 cursor-pointer"
               >
                 {createPostingMutation.isPending ? 'Creating...' : 'Create Posting'}
               </button>

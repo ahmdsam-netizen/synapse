@@ -21,7 +21,7 @@ export default function Navbar() {
   const navLinks = [
     { name: 'Home', path: '/' },
     { name: 'Boards', path: '/boards' },
-    { name: 'Connections', path: '/connections' },
+    { name: 'Peers', path: '/peers' },
     { name: 'Recommendations', path: '/recommendations' },
   ];
 
@@ -42,65 +42,84 @@ export default function Navbar() {
         </div>
 
         {/* Desktop Navigation */}
-        <nav className="hidden md:flex md:items-center md:gap-8">
-          {navLinks.map((link) => (
-            <NavLink
-              key={link.path}
-              to={link.path}
-              className={({ isActive }) =>
-                cn(
-                  'text-sm font-medium transition-colors hover:text-primary-600',
-                  isActive ? 'border-b-2 border-primary-600 text-primary-600' : 'text-gray-600'
-                )
-              }
-            >
-              {link.name}
-            </NavLink>
-          ))}
-        </nav>
+        {user && (
+          <nav className="hidden md:flex md:items-center md:gap-8">
+            {navLinks.map((link) => (
+              <NavLink
+                key={link.path}
+                to={link.path}
+                className={({ isActive }) =>
+                  cn(
+                    'text-sm font-medium transition-colors hover:text-primary-600',
+                    isActive ? 'border-b-2 border-primary-600 text-primary-600' : 'text-gray-600'
+                  )
+                }
+              >
+                {link.name}
+              </NavLink>
+            ))}
+          </nav>
+        )}
 
         {/* User Menu & Mobile Toggle */}
         <div className="flex items-center gap-4">
           <div className="hidden md:block">
-            <Menu as="div" className="relative">
-              <MenuButton className="flex items-center gap-2 rounded-full outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2">
-                {user?.avatarUrl ? (
-                  <img src={user.avatarUrl} alt={user.name} className="h-9 w-9 rounded-full object-cover" />
-                ) : (
-                  <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary-100 text-sm font-medium text-primary-700">
-                    {getInitials(user?.name || 'User')}
-                  </div>
-                )}
-              </MenuButton>
+            {user ? (
+              <Menu as="div" className="relative">
+                <MenuButton className="flex items-center gap-2 rounded-lg p-0.5 outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2">
+                  {user.avatarUrl ? (
+                    <img src={user.avatarUrl} alt={user.name} className="h-9 w-9 rounded-full object-cover" />
+                  ) : (
+                    <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary-100 text-sm font-medium text-primary-700">
+                      {getInitials(user.name || 'User')}
+                    </div>
+                  )}
+                </MenuButton>
 
-              <MenuItems
-                transition
-                className="absolute right-0 mt-2 w-48 origin-top-right rounded-xl border border-gray-100 bg-white py-1 shadow-lg transition duration-100 ease-out data-[closed]:scale-95 data-[closed]:opacity-0"
-              >
-                <div className="border-b border-gray-100 px-4 py-2">
-                  <p className="truncate text-sm font-medium text-gray-900">{user?.name}</p>
-                  <p className="truncate text-xs text-gray-500">{user?.email}</p>
-                </div>
-                <div className="p-1">
-                  <MenuItem>
-                    <Link
-                      to="/profile/me"
-                      className="block rounded-lg px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 data-[focus]:bg-gray-50"
-                    >
-                      Your Profile
-                    </Link>
-                  </MenuItem>
-                  <MenuItem>
-                    <button
-                      onClick={handleLogout}
-                      className="block w-full rounded-lg px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 data-[focus]:bg-red-50"
-                    >
-                      Sign out
-                    </button>
-                  </MenuItem>
-                </div>
-              </MenuItems>
-            </Menu>
+                <MenuItems
+                  transition
+                  className="absolute right-0 mt-2 w-48 origin-top-right rounded-xl border border-gray-100 bg-white py-1 shadow-lg transition duration-100 ease-out data-[closed]:scale-95 data-[closed]:opacity-0"
+                >
+                  <div className="border-b border-gray-100 px-4 py-2">
+                    <p className="truncate text-sm font-medium text-gray-900">{user.name}</p>
+                    <p className="truncate text-xs text-gray-500">{user.email}</p>
+                  </div>
+                  <div className="p-1">
+                    <MenuItem>
+                      <Link
+                        to="/profile/me"
+                        className="block rounded-lg px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 data-[focus]:bg-gray-50"
+                      >
+                        Your Profile
+                      </Link>
+                    </MenuItem>
+                    <MenuItem>
+                      <button
+                        onClick={handleLogout}
+                        className="block w-full rounded-lg px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 data-[focus]:bg-red-50"
+                      >
+                        Sign out
+                      </button>
+                    </MenuItem>
+                  </div>
+                </MenuItems>
+              </Menu>
+            ) : (
+              <div className="flex items-center gap-3">
+                <Link
+                  to="/login"
+                  className="text-sm font-medium text-gray-700 hover:text-primary-600 transition-colors"
+                >
+                  Sign in
+                </Link>
+                <Link
+                  to="/signup"
+                  className="rounded-lg bg-primary-600 px-3.5 py-1.5 text-sm font-medium text-white hover:bg-primary-700 transition-colors shadow-xs"
+                >
+                  Sign up
+                </Link>
+              </div>
+            )}
           </div>
 
           {/* Mobile menu button */}
@@ -124,37 +143,58 @@ export default function Navbar() {
       {isMobileMenuOpen && (
         <div className="md:hidden border-t border-gray-200 bg-white pb-4 pt-2">
           <div className="space-y-1 px-4">
-            {navLinks.map((link) => (
-              <NavLink
-                key={link.path}
-                to={link.path}
-                onClick={() => setIsMobileMenuOpen(false)}
-                className={({ isActive }) =>
-                  cn(
-                    'block rounded-lg px-3 py-2 text-base font-medium transition-colors',
-                    isActive ? 'bg-primary-50 text-primary-700' : 'text-gray-900 hover:bg-gray-50'
-                  )
-                }
-              >
-                {link.name}
-              </NavLink>
-            ))}
-            <Link
-              to="/profile/me"
-              onClick={() => setIsMobileMenuOpen(false)}
-              className="block rounded-lg px-3 py-2 text-base font-medium text-gray-900 hover:bg-gray-50"
-            >
-              Profile
-            </Link>
-            <button
-              onClick={() => {
-                setIsMobileMenuOpen(false);
-                handleLogout();
-              }}
-              className="block w-full rounded-lg px-3 py-2 text-left text-base font-medium text-red-600 hover:bg-red-50"
-            >
-              Sign out
-            </button>
+            {user ? (
+              <>
+                {navLinks.map((link) => (
+                  <NavLink
+                    key={link.path}
+                    to={link.path}
+                    onClick={() => setIsMobileMenuOpen(false)}
+                    className={({ isActive }) =>
+                      cn(
+                        'block rounded-lg px-3 py-2 text-base font-medium transition-colors',
+                        isActive ? 'bg-primary-50 text-primary-700' : 'text-gray-900 hover:bg-gray-50'
+                      )
+                    }
+                  >
+                    {link.name}
+                  </NavLink>
+                ))}
+                <Link
+                  to="/profile/me"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className="block rounded-lg px-3 py-2 text-base font-medium text-gray-900 hover:bg-gray-50"
+                >
+                  Profile
+                </Link>
+                <button
+                  onClick={() => {
+                    setIsMobileMenuOpen(false);
+                    handleLogout();
+                  }}
+                  className="block w-full rounded-lg px-3 py-2 text-left text-base font-medium text-red-600 hover:bg-red-50"
+                >
+                  Sign out
+                </button>
+              </>
+            ) : (
+              <div className="space-y-2 pt-2">
+                <Link
+                  to="/login"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className="block rounded-lg px-3 py-2 text-base font-medium text-gray-900 hover:bg-gray-50"
+                >
+                  Sign in
+                </Link>
+                <Link
+                  to="/signup"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className="block rounded-lg bg-primary-600 px-3 py-2 text-center text-base font-medium text-white hover:bg-primary-700"
+                >
+                  Sign up
+                </Link>
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -125,21 +125,49 @@ pool.query(`
   CREATE UNIQUE INDEX IF NOT EXISTS idx_group_invites_pending ON group_invites(group_id, invitee_id) WHERE status = 'pending';
   CREATE INDEX IF NOT EXISTS idx_group_invites_invitee ON group_invites(invitee_id, status, created_at DESC);
   CREATE INDEX IF NOT EXISTS idx_group_invites_group ON group_invites(group_id, status);
+
+  ALTER TABLE groups ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP DEFAULT (NOW() + INTERVAL '30 days');
+  UPDATE groups SET expires_at = NOW() + INTERVAL '30 days' WHERE expires_at IS NULL;
+  CREATE INDEX IF NOT EXISTS idx_groups_expires_at ON groups(expires_at);
 `).catch((err) => {
-    console.error('Postings/invites schema check error:', err.message);
+    console.error('Schema initialization check error:', err.message);
 });
-// Periodic background job: automatically delete expired postings every 60 seconds
-setInterval(async () => {
+// Periodic background cron jobs
+// 1. Postings cleanup: runs every 10 minutes
+async function cleanupExpiredPostings() {
     try {
         const res = await pool.query(`DELETE FROM board_postings WHERE expires_at IS NOT NULL AND expires_at <= NOW()`);
         if (res.rowCount && res.rowCount > 0) {
-            console.log(`[Auto-Delete] Cleaned up ${res.rowCount} expired board posting(s)`);
+            console.log(`[Cron:Postings] Cleaned up ${res.rowCount} expired board posting(s)`);
         }
     }
     catch (err) {
-        console.error('Auto-delete expired postings error:', err.message);
+        console.error('[Cron:Postings] Error cleaning up expired postings:', err.message);
     }
-}, 60 * 1000);
+}
+// 2. Groups cleanup: runs every 1 hour (cascades to members, postings, invitations, join_requests)
+async function cleanupExpiredGroups() {
+    try {
+        const res = await pool.query(`DELETE FROM groups WHERE expires_at IS NOT NULL AND expires_at <= NOW()`);
+        if (res.rowCount && res.rowCount > 0) {
+            console.log(`[Cron:Groups] Cleaned up ${res.rowCount} expired group(s)`);
+        }
+    }
+    catch (err) {
+        console.error('[Cron:Groups] Error cleaning up expired groups:', err.message);
+    }
+}
+// Run initial cleanups on startup
+cleanupExpiredPostings();
+cleanupExpiredGroups();
+// Schedule: Postings every 10 minutes (10 * 60 * 1000 ms)
+const POSTING_CLEANUP_INTERVAL_MS = 10 * 60 * 1000;
+setInterval(cleanupExpiredPostings, POSTING_CLEANUP_INTERVAL_MS);
+console.log('[Cron] Scheduled postings cleanup every 10 minutes.');
+// Schedule: Groups every 1 hour (60 * 60 * 1000 ms)
+const GROUP_CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
+setInterval(cleanupExpiredGroups, GROUP_CLEANUP_INTERVAL_MS);
+console.log('[Cron] Scheduled groups cleanup every 1 hour.');
 app.listen(env.PORT, '0.0.0.0', () => {
     console.log(`Server running on port ${env.PORT} in ${env.NODE_ENV} mode`);
 });

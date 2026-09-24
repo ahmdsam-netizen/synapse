@@ -5,12 +5,17 @@ export const createGroup = async (userId, collegeId, data) => {
     try {
         await client.query('BEGIN');
         const groupCollegeId = data.visibility === 'college' ? collegeId : null;
-        const { rows: groupRows } = await client.query(`INSERT INTO groups (name, description, creator_id, college_id, visibility, max_members)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`, [data.name, data.description, userId, groupCollegeId, data.visibility, data.maxMembers]);
+        const durationDays = [1, 7, 15, 30].includes(Number(data.durationDays)) ? Number(data.durationDays) : 7;
+        const { rows: groupRows } = await client.query(`INSERT INTO groups (name, description, creator_id, college_id, visibility, max_members, expires_at)
+       VALUES ($1, $2, $3, $4, $5, $6, NOW() + ($7 || ' days')::INTERVAL) RETURNING *`, [data.name, data.description, userId, groupCollegeId, data.visibility, data.maxMembers ? Math.min(Number(data.maxMembers), 8) : 8, durationDays.toString()]);
         const group = groupRows[0];
         await client.query(`INSERT INTO group_members (group_id, user_id, role) VALUES ($1, $2, 'admin')`, [group.id, userId]);
         await client.query('COMMIT');
-        return group;
+        return {
+            ...group,
+            expiresAt: group.expires_at,
+            expires_at: group.expires_at,
+        };
     }
     catch (err) {
         await client.query('ROLLBACK');
@@ -28,13 +33,18 @@ export const getMyGroups = async (userId) => {
             ELSE 0 END as pending_request_count
      FROM groups g
      JOIN group_members gm ON gm.group_id = g.id AND gm.user_id = $1
+     WHERE (g.expires_at IS NULL OR g.expires_at > NOW())
      ORDER BY gm.joined_at DESC`, [userId]);
-    return rows;
+    return rows.map(r => ({
+        ...r,
+        expiresAt: r.expires_at,
+        expires_at: r.expires_at,
+    }));
 };
 export const getGroupDetail = async (groupId, viewerId) => {
-    const { rows: groupRows } = await query(`SELECT * FROM groups WHERE id = $1`, [groupId]);
+    const { rows: groupRows } = await query(`SELECT * FROM groups WHERE id = $1 AND (expires_at IS NULL OR expires_at > NOW())`, [groupId]);
     if (!groupRows.length)
-        throw new NotFoundError('Group not found');
+        throw new NotFoundError('Group not found or has expired');
     const group = groupRows[0];
     const { rows: memberRows } = await query(`SELECT u.id, u.name, u.avatar_url, gm.role, gm.joined_at 
      FROM group_members gm
@@ -58,6 +68,8 @@ export const getGroupDetail = async (groupId, viewerId) => {
      ORDER BY created_at DESC`, [groupId]);
     return {
         ...group,
+        expiresAt: group.expires_at,
+        expires_at: group.expires_at,
         viewerRole: viewerMember ? viewerMember.role : null,
         members,
         postings: postingRows

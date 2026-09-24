@@ -27,7 +27,7 @@ export default function WorkItemCard({ item, isOwnProfile, onEdit }: WorkItemCar
   };
 
   return (
-    <div className="bg-white border border-gray-200 rounded-lg p-5 hover:shadow-md transition-shadow">
+    <div className="bg-white border border-gray-200 rounded-lg p-5 hover:border-gray-300 transition-colors">
       <div className="flex justify-between items-start mb-2">
         <h4 className="text-lg font-semibold text-gray-900">{item.title}</h4>
         
@@ -73,7 +73,7 @@ export default function WorkItemCard({ item, isOwnProfile, onEdit }: WorkItemCar
       {item.tech_used && item.tech_used.length > 0 && (
         <div className="flex flex-wrap gap-1.5 mb-4">
           {item.tech_used.map((tech: string, i: number) => (
-            <span key={i} className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700">
+            <span key={i} className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-gray-100 text-gray-800 border border-gray-200">
               {tech}
             </span>
           ))}

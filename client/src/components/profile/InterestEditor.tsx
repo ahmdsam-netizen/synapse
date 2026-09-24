@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { usersApi } from '../../api/users';
 import { useDebounce } from '../../hooks/useDebounce';
 import { Interest } from '../../types';
+import { PlusIcon } from '@heroicons/react/24/outline';
 
 interface InterestEditorProps {
   interests: any[];
@@ -111,16 +112,16 @@ export default function InterestEditor({ interests, isOwnProfile }: InterestEdit
   );
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+    <div className="bg-white rounded-xl border border-gray-200 p-6">
       <div className="flex justify-between items-center mb-4">
         <div>
-          <h3 className="text-xl font-bold text-gray-900">Interests</h3>
-          <p className="text-xs text-gray-500 mt-0.5">Connect with peers who share your passions and fields</p>
+          <h3 className="text-xl font-bold text-gray-900">#interests</h3>
+          <p className="text-xs text-gray-500 mt-0.5">Academic disciplines, focus domains, and research areas</p>
         </div>
         {isOwnProfile && !isAdding && (
           <button
             onClick={() => setIsAdding(true)}
-            className="inline-flex items-center gap-1 text-emerald-600 hover:text-emerald-700 text-sm font-semibold hover:bg-emerald-50 px-2.5 py-1 rounded-lg transition-colors"
+            className="inline-flex items-center gap-1 text-primary-600 hover:text-primary-700 text-sm font-semibold hover:bg-primary-50 px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
           >
             + Add Interest
           </button>
@@ -135,7 +136,7 @@ export default function InterestEditor({ interests, isOwnProfile }: InterestEdit
           return (
             <div
               key={id || name}
-              className="inline-flex items-center px-3 py-1.5 rounded-full text-sm font-medium bg-emerald-50 text-emerald-800 border border-emerald-100 shadow-2xs"
+              className="inline-flex items-center px-3 py-1.5 rounded-md text-xs font-medium bg-gray-100 text-gray-900 border border-gray-200"
             >
               <span>{name}</span>
               {isOwnProfile && (
@@ -143,7 +144,7 @@ export default function InterestEditor({ interests, isOwnProfile }: InterestEdit
                   type="button"
                   onClick={() => removeInterestMutation.mutate(id)}
                   disabled={removeInterestMutation.isPending}
-                  className="ml-2 text-emerald-500 hover:text-red-500 rounded-full w-4 h-4 flex items-center justify-center font-bold text-xs transition-colors"
+                  className="ml-2 text-gray-400 hover:text-red-600 hover:bg-gray-200/60 rounded w-4 h-4 flex items-center justify-center font-bold text-xs transition-colors cursor-pointer"
                   title="Remove interest"
                 >
                   ×
@@ -153,18 +154,20 @@ export default function InterestEditor({ interests, isOwnProfile }: InterestEdit
           );
         })}
         {interests.length === 0 && !isAdding && (
-          <p className="text-gray-500 text-sm italic py-1">No interests added yet. Add interests to discover shared campus circles!</p>
+          <div className="w-full rounded-lg border border-dashed border-gray-200 p-4 text-center">
+            <p className="text-xs text-gray-500">No interests added yet. Add research areas or focus domains to connect with relevant peer groups.</p>
+          </div>
         )}
       </div>
 
       {/* Adding Mode */}
       {isAdding && (
-        <div className="bg-gray-50/80 p-5 rounded-xl border border-gray-200 space-y-4">
+        <div className="bg-gray-50 p-5 rounded-xl border border-gray-200 space-y-4">
           <div className="flex items-center justify-between">
-            <span className="text-sm font-semibold text-gray-800">Add an Interest</span>
+            <span className="text-sm font-semibold text-gray-900">Add an Interest</span>
             <button
               onClick={resetForm}
-              className="text-xs text-gray-500 hover:text-gray-700"
+              className="text-xs text-gray-500 hover:text-gray-700 cursor-pointer"
             >
               Cancel
             </button>
@@ -179,15 +182,15 @@ export default function InterestEditor({ interests, isOwnProfile }: InterestEdit
           <div className="space-y-3">
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">
-                Search interests or type your own
+                Search interest domains or enter a custom focus
               </label>
               <div className="relative">
                 <input
                   type="text"
                   value={searchTerm}
                   onChange={onSearchChange}
-                  placeholder="e.g. Artificial Intelligence, Blockchain, Hackathons..."
-                  className="border border-gray-300 rounded-lg px-3.5 py-2.5 w-full text-sm bg-white shadow-xs focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 focus:outline-none"
+                  placeholder="e.g. Artificial Intelligence, Robotics, Capstone Engineering..."
+                  className="border border-gray-300 rounded-lg px-3.5 py-2.5 w-full text-sm bg-white shadow-xs focus:ring-1 focus:ring-primary-600 focus:border-primary-600 focus:outline-none"
                   autoFocus
                 />
                 {searchTerm && (
@@ -197,7 +200,7 @@ export default function InterestEditor({ interests, isOwnProfile }: InterestEdit
                       setSearchTerm('');
                       setSearchResults([]);
                     }}
-                    className="absolute right-3 top-2.5 text-gray-400 hover:text-gray-600 text-sm"
+                    className="absolute right-3 top-2.5 text-gray-400 hover:text-gray-600 text-sm cursor-pointer"
                   >
                     ×
                   </button>
@@ -207,14 +210,17 @@ export default function InterestEditor({ interests, isOwnProfile }: InterestEdit
 
             {/* Search Dropdown / Results */}
             {searchTerm.trim().length > 0 && (
-              <div className="bg-white border border-gray-200 rounded-lg shadow-md max-h-56 overflow-y-auto divide-y divide-gray-100">
+              <div className="bg-white border border-gray-200 rounded-lg shadow-sm max-h-56 overflow-y-auto divide-y divide-gray-100">
                 {!exactMatchExists && (
                   <div
                     onClick={() => selectInterest({ name: searchTerm.trim() })}
-                    className="px-3.5 py-2.5 hover:bg-emerald-50 cursor-pointer text-sm font-medium text-emerald-700 flex items-center justify-between"
+                    className="px-3.5 py-2.5 hover:bg-primary-50 cursor-pointer text-sm font-medium text-primary-700 flex items-center justify-between"
                   >
-                    <span>✨ Add &ldquo;<span className="font-bold">{searchTerm.trim()}</span>&rdquo; as a new custom interest</span>
-                    <span className="text-xs bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">Custom</span>
+                    <span className="flex items-center gap-1.5">
+                      <PlusIcon className="h-4 w-4 shrink-0 text-primary-600" />
+                      <span>Add &ldquo;<span className="font-bold">{searchTerm.trim()}</span>&rdquo; as a new custom interest</span>
+                    </span>
+                    <span className="text-xs bg-primary-100 text-primary-800 px-2 py-0.5 rounded-md font-medium">Custom</span>
                   </div>
                 )}
 
@@ -222,10 +228,10 @@ export default function InterestEditor({ interests, isOwnProfile }: InterestEdit
                   <div
                     key={res.id}
                     onClick={() => selectInterest(res)}
-                    className="px-3.5 py-2.5 hover:bg-emerald-50 cursor-pointer text-sm flex items-center justify-between group"
+                    className="px-3.5 py-2.5 hover:bg-gray-50 cursor-pointer text-sm flex items-center justify-between group"
                   >
-                    <span className="font-medium text-gray-800 group-hover:text-emerald-900">{res.name}</span>
-                    <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full group-hover:bg-emerald-100 group-hover:text-emerald-700">
+                    <span className="font-medium text-gray-900 group-hover:text-primary-700">{res.name}</span>
+                    <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-md group-hover:bg-primary-50 group-hover:text-primary-800">
                       {res.category}
                     </span>
                   </div>
@@ -244,7 +250,7 @@ export default function InterestEditor({ interests, isOwnProfile }: InterestEdit
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <span className="text-xs font-medium text-gray-600">
-                    Click to add suggested interests:
+                    Taxonomy suggestions:
                   </span>
                   {isLoadingSuggestions && (
                     <span className="text-2xs text-gray-400">Loading...</span>
@@ -257,14 +263,14 @@ export default function InterestEditor({ interests, isOwnProfile }: InterestEdit
                       type="button"
                       onClick={() => selectInterest(res)}
                       disabled={addInterestMutation.isPending}
-                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium bg-white hover:bg-emerald-50 hover:text-emerald-800 hover:border-emerald-300 text-gray-700 border border-gray-200 shadow-2xs transition-colors"
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium bg-white hover:bg-primary-50 hover:text-primary-700 hover:border-primary-300 text-gray-700 border border-gray-200 shadow-2xs transition-colors cursor-pointer"
                     >
                       <span>+ {res.name}</span>
                       <span className="text-2xs text-gray-400 font-normal">· {res.category}</span>
                     </button>
                   ))}
                   {unaddedSuggestions.length === 0 && !isLoadingSuggestions && (
-                    <span className="text-xs text-gray-400 italic">No more suggested interests. Type to add a custom interest!</span>
+                    <span className="text-xs text-gray-400">No more suggested interests available. Type above to add a custom interest.</span>
                   )}
                 </div>
               </div>

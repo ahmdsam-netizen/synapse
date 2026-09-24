@@ -8,7 +8,6 @@ import toast from 'react-hot-toast';
 import {
   UserPlusIcon,
   CheckIcon,
-  SparklesIcon,
   ArrowTopRightOnSquareIcon,
   UserMinusIcon,
 } from '@heroicons/react/24/outline';
@@ -95,7 +94,7 @@ export function UserCard({
     user.viaConnection?.name || user.viaConnectionName || (user as any).via_connection_name;
 
   return (
-    <div className="flex flex-col justify-between rounded-xl border border-gray-100 bg-white p-5 shadow-sm hover:shadow-md transition-shadow h-full">
+    <div className="flex flex-col justify-between rounded-xl border border-gray-200 bg-white p-5 hover:border-gray-300 transition-colors h-full">
       <div>
         {/* Top: Avatar & Info */}
         <div className="flex items-start gap-3">
@@ -106,7 +105,7 @@ export function UserCard({
               className="h-12 w-12 rounded-full object-cover ring-2 ring-gray-100 shrink-0"
             />
           ) : (
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-primary-500 to-primary-700 text-base font-semibold text-white ring-2 ring-gray-100">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-primary-600 text-base font-semibold text-white ring-2 ring-gray-100">
               {getInitials(name)}
             </div>
           )}
@@ -154,7 +153,6 @@ export function UserCard({
                   label={sName}
                   variant="skill"
                   size="sm"
-                  matched={isMatched}
                 />
               );
             })}
@@ -176,7 +174,7 @@ export function UserCard({
           </span>
         ) : mode === 'second_degree' ? (
           <div className="flex items-center gap-1.5 text-xs text-gray-500 min-w-0">
-            <span className="inline-flex items-center rounded-full bg-primary-50 px-2 py-0.5 text-[11px] font-medium text-primary-700 shrink-0">
+            <span className="inline-flex items-center rounded-md bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-800 border border-gray-200 shrink-0">
               {mutualCount ?? 1} mutual
             </span>
             {viaConnectionName && (
@@ -192,20 +190,19 @@ export function UserCard({
           /* Similarity / Search Recommendation modes */
           <div className="flex items-center min-w-0">
             {matchPct !== undefined ? (
-              <div
-                className="inline-flex items-center gap-1 shrink-0 rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700 border border-emerald-200"
-                title={`${matchPct}% Compatibility Match`}
+              <span
+                className="inline-flex items-center shrink-0 rounded-md bg-primary-50 px-2 py-0.5 text-[11px] font-semibold text-primary-800 border border-primary-200"
+                title={`${matchPct}% Skill Overlap`}
               >
-                <SparklesIcon className="w-3 h-3 text-emerald-600 shrink-0" />
-                <span>{matchPct}% Match</span>
-              </div>
+                {matchPct}% Skill Overlap
+              </span>
             ) : user.sameCollege ? (
-              <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 shrink-0">
-                Same college
+              <span className="inline-flex items-center rounded-md bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-800 border border-gray-200 shrink-0">
+                Same institution
               </span>
             ) : (
-              <span className="text-[11px] text-gray-400 shrink-0">
-                Recommended
+              <span className="text-[11px] text-gray-500 shrink-0">
+                Suggested peer
               </span>
             )}
           </div>

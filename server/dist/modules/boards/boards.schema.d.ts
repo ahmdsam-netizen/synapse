@@ -11,6 +11,8 @@ export declare const createPostingSchema: z.ZodObject<{
     rolesNeeded: z.ZodDefault<z.ZodOptional<z.ZodArray<z.ZodString>>>;
     requiredSkillIds: z.ZodDefault<z.ZodOptional<z.ZodArray<z.ZodString>>>;
     requiredInterestIds: z.ZodDefault<z.ZodOptional<z.ZodArray<z.ZodString>>>;
+    requiredSkills: z.ZodDefault<z.ZodOptional<z.ZodArray<z.ZodString>>>;
+    requiredInterests: z.ZodDefault<z.ZodOptional<z.ZodArray<z.ZodString>>>;
     slotsTotal: z.ZodDefault<z.ZodOptional<z.ZodCoercedNumber<unknown>>>;
     expiresInHours: z.ZodDefault<z.ZodOptional<z.ZodCoercedNumber<unknown>>>;
 }, z.core.$strip>;
@@ -25,6 +27,8 @@ export declare const updatePostingSchema: z.ZodObject<{
     rolesNeeded: z.ZodOptional<z.ZodArray<z.ZodString>>;
     requiredSkillIds: z.ZodOptional<z.ZodArray<z.ZodString>>;
     requiredInterestIds: z.ZodOptional<z.ZodArray<z.ZodString>>;
+    requiredSkills: z.ZodOptional<z.ZodArray<z.ZodString>>;
+    requiredInterests: z.ZodOptional<z.ZodArray<z.ZodString>>;
     slotsTotal: z.ZodOptional<z.ZodCoercedNumber<unknown>>;
     expiresInHours: z.ZodOptional<z.ZodCoercedNumber<unknown>>;
 }, z.core.$strip>;

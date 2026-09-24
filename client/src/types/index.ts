@@ -103,6 +103,9 @@ export interface Group {
   userRole?: 'admin' | 'member';
   pendingRequestCount?: number;
   createdAt: string;
+  expiresAt?: string | null;
+  expires_at?: string | null;
+  durationDays?: number;
 }
 
 export interface BoardPosting {

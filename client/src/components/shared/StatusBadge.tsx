@@ -8,13 +8,13 @@ interface StatusBadgeProps {
 
 export function StatusBadge({ status, className }: StatusBadgeProps) {
   const styles = {
-    pending: "bg-amber-100 text-amber-800",
-    approved: "bg-green-100 text-green-800",
-    rejected: "bg-red-100 text-red-800",
-    open: "bg-green-100 text-green-800",
-    closed: "bg-gray-100 text-gray-800",
-    admin: "bg-purple-100 text-purple-800",
-    member: "bg-blue-100 text-blue-800"
+    pending: "bg-amber-50 text-amber-800 border border-amber-200",
+    approved: "bg-primary-50 text-primary-800 border border-primary-200",
+    rejected: "bg-red-50 text-red-800 border border-red-200",
+    open: "bg-primary-50 text-primary-800 border border-primary-200",
+    closed: "bg-gray-100 text-gray-700 border border-gray-200",
+    admin: "bg-primary-50 text-primary-800 border border-primary-200",
+    member: "bg-gray-100 text-gray-800 border border-gray-200"
   };
 
   const labels = {
@@ -29,7 +29,7 @@ export function StatusBadge({ status, className }: StatusBadgeProps) {
 
   return (
     <span className={cn(
-      "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium",
+      "inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium",
       styles[status],
       className
     )}>

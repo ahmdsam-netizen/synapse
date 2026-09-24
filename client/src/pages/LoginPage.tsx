@@ -33,8 +33,8 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-primary-50 px-4 py-12 sm:px-6 lg:px-8">
-      <div className="w-full max-w-md space-y-8 rounded-xl bg-white p-8 shadow-sm">
+    <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4 py-12 sm:px-6 lg:px-8">
+      <div className="w-full max-w-md space-y-8 rounded-xl bg-white p-8 border border-gray-200">
         <div>
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-lg bg-primary-600 text-white">
             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -105,6 +105,16 @@ export default function LoginPage() {
             >
               {isSubmitting ? 'Signing in...' : 'Sign in'}
             </button>
+          </div>
+
+          <div className="mt-4 flex items-center justify-center gap-4 text-xs text-gray-500">
+            <Link to="/privacy" className="hover:text-primary-600 transition-colors">
+              Privacy Policy
+            </Link>
+            <span>&bull;</span>
+            <Link to="/terms" className="hover:text-primary-600 transition-colors">
+              Terms of Service
+            </Link>
           </div>
         </form>
       </div>

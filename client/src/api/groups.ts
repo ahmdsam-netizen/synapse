@@ -14,7 +14,7 @@ export interface GroupDetail extends Group {
 }
 
 export const groupsApi = {
-  create: (data: { name: string; description?: string; visibility: 'global' | 'college'; maxMembers?: number }) =>
+  create: (data: { name: string; description?: string; visibility: 'global' | 'college'; maxMembers?: number; durationDays?: number }) =>
     apiClient.post<{ group: Group }>('/groups', data),
 
   getMyGroups: () =>

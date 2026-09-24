@@ -193,10 +193,10 @@ export const searchUsers = async (userId: string, _collegeId: string | null, fil
     lastActive: item.last_active,
     skills: userSkillsMap.get(item.id) || [],
     interests: userInterestsMap.get(item.id) || [],
-    matchedSkills: userSkillsMap.get(item.id) || [],
-    matchedInterests: userInterestsMap.get(item.id) || [],
-    matched_skills: userSkillsMap.get(item.id) || [],
-    matched_interests: userInterestsMap.get(item.id) || []
+    matchedSkills: [],
+    matchedInterests: [],
+    matched_skills: [],
+    matched_interests: []
   }));
 
   const lastItem = enrichedItems[enrichedItems.length - 1];

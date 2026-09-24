@@ -24,13 +24,11 @@ export default function BoardPage() {
   const [myPostsSubView, setMyPostsSubView] = useState<'created' | 'requests'>('created');
   const [boardSearch, setBoardSearch] = useState('');
   const [selectedSkill, setSelectedSkill] = useState('');
-  const [selectedCommunity, setSelectedCommunity] = useState<'project' | 'hackathon' | 'competition'>('project');
 
   const filters = useMemo(() => ({
     q: boardSearch.trim() || undefined,
     skills: selectedSkill ? [selectedSkill] : undefined,
-    community: selectedCommunity,
-  }), [boardSearch, selectedSkill, selectedCommunity]);
+  }), [boardSearch, selectedSkill]);
 
   const queryClient = useQueryClient();
 
@@ -80,9 +78,9 @@ export default function BoardPage() {
     fetchNextPage: fetchNextMyPostings,
     sentinelRef: myPostingsRef,
   } = useInfiniteScroll<BoardPosting>({
-    queryKey: ['board', 'my-postings', selectedCommunity],
+    queryKey: ['board', 'my-postings'],
     queryFn: async (cursor) => {
-      const res = await boardsApi.getMyPostings({ cursor, limit: 30, community: selectedCommunity });
+      const res = await boardsApi.getMyPostings({ cursor, limit: 30 });
       return normalizePaginated(res.data);
     },
   });
@@ -123,13 +121,6 @@ export default function BoardPage() {
     setIsJoinModalOpen(true);
   };
 
-  const filterByCommunity = (list: BoardPosting[]) => {
-    return list.filter((p) => {
-      const comm = ((p.community || (p as any).community || 'project') as string).toLowerCase();
-      return comm === selectedCommunity;
-    });
-  };
-
   const renderPostings = (
     postings: BoardPosting[],
     ref: any,
@@ -138,14 +129,12 @@ export default function BoardPage() {
     tabType: 'global' | 'college' | 'my-postings',
     onLoadMore?: () => void
   ) => {
-    const filtered = filterByCommunity(postings);
-
-    if (filtered.length === 0) {
-      let emptyTitle = `No #${selectedCommunity} postings available`;
-      let emptyDesc = `There are currently no #${selectedCommunity} postings in this view. Try selecting another community or create a new posting.`;
+    if (postings.length === 0) {
+      let emptyTitle = 'No postings available';
+      let emptyDesc = 'There are currently no active recruitment postings in this view. Check back soon or create a new posting.';
       if (tabType === 'college') {
-        emptyTitle = `No #${selectedCommunity} postings from your college`;
-        emptyDesc = "Be the first in your college to create a group and posting!";
+        emptyTitle = 'No postings from your campus';
+        emptyDesc = 'Be the first on your campus to create a group and recruitment posting!';
       }
 
       return (
@@ -159,7 +148,7 @@ export default function BoardPage() {
     return (
       <div className="flex flex-col gap-6 pb-12">
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {filtered.map((posting: BoardPosting) => (
+          {postings.map((posting: BoardPosting) => (
             <PostingCard
               key={posting.id}
               posting={posting}
@@ -217,13 +206,13 @@ export default function BoardPage() {
       <div className="mb-8 flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">#board</h1>
-          <p className="mt-1 text-sm text-gray-500">Discover groups and collaborate with peers</p>
+          <p className="mt-1 text-sm text-gray-500">Browse verified student recruitment postings for hackathons, engineering capstones, and competitions.</p>
         </div>
         <div>
           {isAdminOfAnyGroup && (
             <button
               onClick={() => setIsCreatePostingOpen(true)}
-              className="inline-flex items-center justify-center rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+              className="inline-flex items-center justify-center rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-primary-700 focus:outline-none focus:ring-1 focus:ring-primary-600 cursor-pointer"
             >
               Create Posting
             </button>
@@ -234,50 +223,21 @@ export default function BoardPage() {
       <TabGroup selectedIndex={selectedTabIndex} onChange={setSelectedTabIndex}>
         <TabList className="mb-8 flex space-x-1 rounded-xl bg-gray-100 p-1 max-w-2xl">
           <Tab
-            className="w-full rounded-lg py-2.5 text-sm font-medium leading-5 transition-colors focus:outline-none data-[selected]:bg-white data-[selected]:text-primary-700 data-[selected]:shadow data-[hover]:bg-white/50 data-[hover]:text-gray-900 text-gray-500"
+            className="w-full rounded-lg py-2.5 text-sm font-medium leading-5 transition-colors focus:outline-none data-[selected]:bg-white data-[selected]:text-primary-700 data-[selected]:shadow data-[hover]:bg-white/50 data-[hover]:text-gray-900 text-gray-500 cursor-pointer"
           >
             #all
           </Tab>
           <Tab
-            className="w-full rounded-lg py-2.5 text-sm font-medium leading-5 transition-colors focus:outline-none data-[selected]:bg-white data-[selected]:text-primary-700 data-[selected]:shadow data-[hover]:bg-white/50 data-[hover]:text-gray-900 text-gray-500"
+            className="w-full rounded-lg py-2.5 text-sm font-medium leading-5 transition-colors focus:outline-none data-[selected]:bg-white data-[selected]:text-primary-700 data-[selected]:shadow data-[hover]:bg-white/50 data-[hover]:text-gray-900 text-gray-500 cursor-pointer"
           >
             #myCollege
           </Tab>
           <Tab
-            className="w-full rounded-lg py-2.5 text-sm font-medium leading-5 transition-colors focus:outline-none data-[selected]:bg-white data-[selected]:text-primary-700 data-[selected]:shadow data-[hover]:bg-white/50 data-[hover]:text-gray-900 text-gray-500"
+            className="w-full rounded-lg py-2.5 text-sm font-medium leading-5 transition-colors focus:outline-none data-[selected]:bg-white data-[selected]:text-primary-700 data-[selected]:shadow data-[hover]:bg-white/50 data-[hover]:text-gray-900 text-gray-500 cursor-pointer"
           >
             #byMe
           </Tab>
         </TabList>
-
-        {/* Community Filter Pills: #project, #hackathon, #competition */}
-        <div className="mb-6 flex items-center flex-wrap gap-2">
-          <span className="text-xs font-semibold text-gray-500 mr-1 uppercase tracking-wider">
-            Community:
-          </span>
-          {[
-            { id: 'project', label: '#project' },
-            { id: 'hackathon', label: '#hackathon' },
-            { id: 'competition', label: '#competition' },
-          ].map((c) => {
-            const isSelected = selectedCommunity === c.id;
-            return (
-              <button
-                key={c.id}
-                type="button"
-                onClick={() => setSelectedCommunity(c.id as any)}
-                className={cn(
-                  'rounded-full px-3.5 py-1.5 text-xs font-semibold transition-all cursor-pointer border',
-                  isSelected
-                    ? 'bg-primary-600 text-white border-primary-600 shadow-sm'
-                    : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300 hover:bg-gray-50'
-                )}
-              >
-                {c.label}
-              </button>
-            );
-          })}
-        </div>
 
         <TabPanels>
           <TabPanel>
@@ -314,7 +274,7 @@ export default function BoardPage() {
                     : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                 )}
               >
-                My Group Postings ({filterByCommunity(myPostings).length})
+                My Group Postings ({myPostings.length})
               </button>
               <button
                 type="button"
@@ -337,10 +297,10 @@ export default function BoardPage() {
                     <div key={i} className="h-64 animate-pulse rounded-xl bg-gray-200" />
                   ))}
                 </div>
-              ) : filterByCommunity(myPostings).length === 0 ? (
+              ) : myPostings.length === 0 ? (
                 <EmptyState
-                  title={`No #${selectedCommunity} postings created`}
-                  description={`You have not created any #${selectedCommunity} postings yet.`}
+                  title="No postings created"
+                  description="You have not created any postings yet."
                   action={{
                     label: 'Create Posting',
                     onClick: () => setIsCreatePostingOpen(true),
@@ -349,7 +309,7 @@ export default function BoardPage() {
               ) : (
                 <div className="flex flex-col gap-6 pb-12">
                   <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-                    {filterByCommunity(myPostings).map((posting: BoardPosting) => (
+                    {myPostings.map((posting: BoardPosting) => (
                       <PostingCard
                         key={posting.id}
                         posting={posting}

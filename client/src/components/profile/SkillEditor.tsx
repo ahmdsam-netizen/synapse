@@ -4,6 +4,7 @@ import { usersApi } from '../../api/users';
 import { useDebounce } from '../../hooks/useDebounce';
 import { cn } from '../../lib/utils';
 import { Skill } from '../../types';
+import { PlusIcon } from '@heroicons/react/24/outline';
 
 interface SkillEditorProps {
   skills: any[];
@@ -108,9 +109,9 @@ export default function SkillEditor({ skills, isOwnProfile }: SkillEditorProps) 
 
   const getProficiencyColor = (level: string) => {
     switch (level?.toLowerCase()) {
-      case 'beginner': return 'bg-amber-400';
-      case 'intermediate': return 'bg-blue-500';
-      case 'advanced': return 'bg-emerald-500';
+      case 'beginner': return 'bg-amber-500';
+      case 'intermediate': return 'bg-primary-500';
+      case 'advanced': return 'bg-primary-700';
       default: return 'bg-gray-400';
     }
   };
@@ -136,16 +137,16 @@ export default function SkillEditor({ skills, isOwnProfile }: SkillEditorProps) 
   );
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+    <div className="bg-white rounded-xl border border-gray-200 p-6">
       <div className="flex justify-between items-center mb-4">
         <div>
-          <h3 className="text-xl font-bold text-gray-900">Skills</h3>
-          <p className="text-xs text-gray-500 mt-0.5">Showcase your technical and professional expertise</p>
+          <h3 className="text-xl font-bold text-gray-900">#skills</h3>
+          <p className="text-xs text-gray-500 mt-0.5">Verified technical competencies and tools for engineering matching</p>
         </div>
         {isOwnProfile && !isAdding && (
           <button
             onClick={() => setIsAdding(true)}
-            className="inline-flex items-center gap-1 text-primary-600 hover:text-primary-700 text-sm font-semibold hover:bg-primary-50 px-2.5 py-1 rounded-lg transition-colors"
+            className="inline-flex items-center gap-1 text-primary-600 hover:text-primary-700 text-sm font-semibold hover:bg-primary-50 px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
           >
             + Add Skill
           </button>
@@ -161,14 +162,14 @@ export default function SkillEditor({ skills, isOwnProfile }: SkillEditorProps) 
           return (
             <div
               key={id || name}
-              className="inline-flex items-center px-3 py-1.5 rounded-full text-sm font-medium bg-blue-50 text-blue-800 border border-blue-100 shadow-2xs"
+              className="inline-flex items-center px-3 py-1.5 rounded-md text-xs font-medium bg-primary-50 text-primary-900 border border-primary-200"
             >
               <span
-                className={cn("w-2 h-2 rounded-full mr-2 shrink-0", getProficiencyColor(prof))}
+                className={cn("w-1.5 h-1.5 rounded-full mr-2 shrink-0", getProficiencyColor(prof))}
                 title={`Proficiency: ${prof}`}
               />
-              <span>{name}</span>
-              <span className="ml-1.5 text-xs text-blue-600/75 capitalize font-normal">
+              <span className="font-semibold">{name}</span>
+              <span className="ml-1.5 text-xs text-primary-700/80 capitalize font-normal">
                 ({prof})
               </span>
               {isOwnProfile && (
@@ -176,7 +177,7 @@ export default function SkillEditor({ skills, isOwnProfile }: SkillEditorProps) 
                   type="button"
                   onClick={() => removeSkillMutation.mutate(id)}
                   disabled={removeSkillMutation.isPending}
-                  className="ml-2 text-blue-400 hover:text-red-500 rounded-full w-4 h-4 flex items-center justify-center font-bold text-xs transition-colors"
+                  className="ml-2 text-primary-600 hover:text-red-600 hover:bg-primary-100/50 rounded w-4 h-4 flex items-center justify-center font-bold text-xs transition-colors cursor-pointer"
                   title="Remove skill"
                 >
                   ×
@@ -186,18 +187,20 @@ export default function SkillEditor({ skills, isOwnProfile }: SkillEditorProps) 
           );
         })}
         {skills.length === 0 && !isAdding && (
-          <p className="text-gray-500 text-sm italic py-1">No skills added yet. Add skills to get better connection matches!</p>
+          <div className="w-full rounded-lg border border-dashed border-gray-200 p-4 text-center">
+            <p className="text-xs text-gray-500">No skills added yet. Add verified technical proficiencies to improve matchmaking accuracy.</p>
+          </div>
         )}
       </div>
 
       {/* Adding Mode */}
       {isAdding && (
-        <div className="bg-gray-50/80 p-5 rounded-xl border border-gray-200 space-y-4 transition-all">
+        <div className="bg-gray-50 p-5 rounded-xl border border-gray-200 space-y-4">
           <div className="flex items-center justify-between">
-            <span className="text-sm font-semibold text-gray-800">Add a New Skill</span>
+            <span className="text-sm font-semibold text-gray-900">Add a New Skill</span>
             <button
               onClick={resetForm}
-              className="text-xs text-gray-500 hover:text-gray-700"
+              className="text-xs text-gray-500 hover:text-gray-700 cursor-pointer"
             >
               Cancel
             </button>
@@ -211,12 +214,12 @@ export default function SkillEditor({ skills, isOwnProfile }: SkillEditorProps) 
 
           {/* Selected Skill Banner (if any) */}
           {selectedSkill ? (
-            <div className="flex items-center justify-between bg-primary-50/80 border border-primary-200 rounded-lg p-3">
+            <div className="flex items-center justify-between bg-primary-50 border border-primary-200 rounded-lg p-3">
               <div className="flex items-center gap-2">
                 <span className="text-xs text-primary-700 font-medium uppercase tracking-wide">Selected:</span>
                 <span className="font-semibold text-primary-900">{selectedSkill.name}</span>
                 {selectedSkill.category && (
-                  <span className="text-xs bg-white text-primary-700 border border-primary-200 px-2 py-0.5 rounded-full">
+                  <span className="text-xs bg-white text-primary-800 border border-primary-200 px-2 py-0.5 rounded-md font-medium">
                     {selectedSkill.category}
                   </span>
                 )}
@@ -227,7 +230,7 @@ export default function SkillEditor({ skills, isOwnProfile }: SkillEditorProps) 
                   setSelectedSkill(null);
                   setSearchTerm('');
                 }}
-                className="text-xs font-semibold text-primary-700 hover:text-primary-900 hover:underline"
+                className="text-xs font-semibold text-primary-700 hover:text-primary-900 hover:underline cursor-pointer"
               >
                 Change
               </button>
@@ -237,15 +240,15 @@ export default function SkillEditor({ skills, isOwnProfile }: SkillEditorProps) 
             <div className="space-y-3">
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">
-                  Search existing skills or type your own
+                  Search catalog skills or enter a custom skill
                 </label>
                 <div className="relative">
                   <input
                     type="text"
                     value={searchTerm}
                     onChange={onSearchChange}
-                    placeholder="e.g. React, Python, Docker, UI Design..."
-                    className="border border-gray-300 rounded-lg px-3.5 py-2.5 w-full text-sm bg-white shadow-xs focus:ring-2 focus:ring-primary-500 focus:border-primary-500 focus:outline-none"
+                    placeholder="e.g. React, Python, Docker, PyTorch, Embedded C..."
+                    className="border border-gray-300 rounded-lg px-3.5 py-2.5 w-full text-sm bg-white shadow-xs focus:ring-1 focus:ring-primary-600 focus:border-primary-600 focus:outline-none"
                     autoFocus
                   />
                   {searchTerm && (
@@ -255,7 +258,7 @@ export default function SkillEditor({ skills, isOwnProfile }: SkillEditorProps) 
                         setSearchTerm('');
                         setSearchResults([]);
                       }}
-                      className="absolute right-3 top-2.5 text-gray-400 hover:text-gray-600 text-sm"
+                      className="absolute right-3 top-2.5 text-gray-400 hover:text-gray-600 text-sm cursor-pointer"
                     >
                       ×
                     </button>
@@ -265,15 +268,18 @@ export default function SkillEditor({ skills, isOwnProfile }: SkillEditorProps) 
 
               {/* Search Dropdown / Results */}
               {searchTerm.trim().length > 0 && (
-                <div className="bg-white border border-gray-200 rounded-lg shadow-md max-h-56 overflow-y-auto divide-y divide-gray-100">
+                <div className="bg-white border border-gray-200 rounded-lg shadow-sm max-h-56 overflow-y-auto divide-y divide-gray-100">
                   {/* Option to create custom skill if no exact match */}
                   {!exactMatchExists && (
                     <div
                       onClick={() => setSelectedSkill({ name: searchTerm.trim(), category: 'Custom' })}
                       className="px-3.5 py-2.5 hover:bg-primary-50 cursor-pointer text-sm font-medium text-primary-700 flex items-center justify-between"
                     >
-                      <span>✨ Add &ldquo;<span className="font-bold">{searchTerm.trim()}</span>&rdquo; as a new custom skill</span>
-                      <span className="text-xs bg-primary-100 text-primary-800 px-2 py-0.5 rounded-full">Custom</span>
+                      <span className="flex items-center gap-1.5">
+                        <PlusIcon className="h-4 w-4 shrink-0 text-primary-600" />
+                        <span>Add &ldquo;<span className="font-bold">{searchTerm.trim()}</span>&rdquo; as a new custom skill</span>
+                      </span>
+                      <span className="text-xs bg-primary-100 text-primary-800 px-2 py-0.5 rounded-md font-medium">Custom</span>
                     </div>
                   )}
 
@@ -285,10 +291,10 @@ export default function SkillEditor({ skills, isOwnProfile }: SkillEditorProps) 
                         setSearchTerm(res.name);
                         setSearchResults([]);
                       }}
-                      className="px-3.5 py-2.5 hover:bg-blue-50/70 cursor-pointer text-sm flex items-center justify-between group"
+                      className="px-3.5 py-2.5 hover:bg-gray-50 cursor-pointer text-sm flex items-center justify-between group"
                     >
-                      <span className="font-medium text-gray-800 group-hover:text-blue-900">{res.name}</span>
-                      <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full group-hover:bg-blue-100 group-hover:text-blue-700">
+                      <span className="font-medium text-gray-900 group-hover:text-primary-700">{res.name}</span>
+                      <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-md group-hover:bg-primary-50 group-hover:text-primary-800">
                         {res.category}
                       </span>
                     </div>
@@ -307,7 +313,7 @@ export default function SkillEditor({ skills, isOwnProfile }: SkillEditorProps) 
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
                     <span className="text-xs font-medium text-gray-600">
-                      Suggested skills to choose from:
+                      Standard taxonomy suggestions:
                     </span>
                     {isLoadingSuggestions && (
                       <span className="text-2xs text-gray-400">Loading...</span>
@@ -319,14 +325,14 @@ export default function SkillEditor({ skills, isOwnProfile }: SkillEditorProps) 
                         key={res.id}
                         type="button"
                         onClick={() => setSelectedSkill(res)}
-                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium bg-white hover:bg-primary-50 hover:text-primary-700 hover:border-primary-300 text-gray-700 border border-gray-200 shadow-2xs transition-colors"
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium bg-white hover:bg-primary-50 hover:text-primary-700 hover:border-primary-300 text-gray-700 border border-gray-200 shadow-2xs transition-colors cursor-pointer"
                       >
                         <span>{res.name}</span>
                         <span className="text-2xs text-gray-400 font-normal">· {res.category}</span>
                       </button>
                     ))}
                     {unaddedSuggestions.length === 0 && !isLoadingSuggestions && (
-                      <span className="text-xs text-gray-400 italic">No more suggested skills available. Type to add a custom skill!</span>
+                      <span className="text-xs text-gray-400">No more suggested skills available. Type above to add a custom skill.</span>
                     )}
                   </div>
                 </div>
@@ -336,15 +342,15 @@ export default function SkillEditor({ skills, isOwnProfile }: SkillEditorProps) 
 
           {/* Proficiency Level Selector */}
           {selectedSkill && (
-            <div className="pt-2 border-t border-gray-200/80">
+            <div className="pt-2 border-t border-gray-200">
               <label className="block text-xs font-semibold text-gray-700 mb-2">
                 Select Your Proficiency Level
               </label>
               <div className="grid grid-cols-3 gap-2">
                 {[
-                  { level: 'beginner', label: 'Beginner', desc: 'Learning & basics', dotColor: 'bg-amber-400' },
-                  { level: 'intermediate', label: 'Intermediate', desc: 'Comfortable & building', dotColor: 'bg-blue-500' },
-                  { level: 'advanced', label: 'Advanced', desc: 'Expert & experienced', dotColor: 'bg-emerald-500' },
+                  { level: 'beginner', label: 'Beginner', desc: 'Foundations & basics', dotColor: 'bg-amber-500' },
+                  { level: 'intermediate', label: 'Intermediate', desc: 'Practical production', dotColor: 'bg-primary-500' },
+                  { level: 'advanced', label: 'Advanced', desc: 'Specialist / system lead', dotColor: 'bg-primary-700' },
                 ].map(({ level, label, desc, dotColor }) => {
                   const isSelected = proficiency === level;
                   return (
@@ -353,10 +359,10 @@ export default function SkillEditor({ skills, isOwnProfile }: SkillEditorProps) 
                       type="button"
                       onClick={() => setProficiency(level as any)}
                       className={cn(
-                        "flex flex-col items-start text-left p-2.5 rounded-lg border text-xs transition-all",
+                        "flex flex-col items-start text-left p-2.5 rounded-lg border text-xs transition-colors cursor-pointer",
                         isSelected
-                          ? "bg-white border-primary-500 shadow-xs ring-2 ring-primary-500/20"
-                          : "bg-white/60 border-gray-200 hover:bg-white hover:border-gray-300"
+                          ? "bg-primary-50/50 border-primary-600 shadow-xs text-primary-900"
+                          : "bg-white border-gray-200 hover:border-gray-300"
                       )}
                     >
                       <div className="flex items-center gap-1.5 font-semibold text-gray-900 mb-0.5">
@@ -372,11 +378,11 @@ export default function SkillEditor({ skills, isOwnProfile }: SkillEditorProps) 
           )}
 
           {/* Form Actions */}
-          <div className="flex justify-end gap-2 pt-2 border-t border-gray-200/80">
+          <div className="flex justify-end gap-2 pt-2 border-t border-gray-200">
             <button
               type="button"
               onClick={resetForm}
-              className="bg-white hover:bg-gray-100 text-gray-700 border border-gray-300 rounded-lg px-3.5 py-1.5 text-xs font-semibold transition-colors"
+              className="bg-white hover:bg-gray-100 text-gray-700 border border-gray-300 rounded-lg px-3.5 py-1.5 text-xs font-semibold transition-colors cursor-pointer"
             >
               Cancel
             </button>
@@ -384,7 +390,7 @@ export default function SkillEditor({ skills, isOwnProfile }: SkillEditorProps) 
               type="button"
               onClick={handleAdd}
               disabled={!selectedSkill || addSkillMutation.isPending}
-              className="bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white rounded-lg px-4 py-1.5 text-xs font-semibold transition-colors shadow-2xs inline-flex items-center gap-1"
+              className="bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white rounded-lg px-4 py-1.5 text-xs font-semibold transition-colors shadow-2xs inline-flex items-center gap-1 cursor-pointer"
             >
               {addSkillMutation.isPending ? 'Adding Skill...' : 'Add to Profile'}
             </button>

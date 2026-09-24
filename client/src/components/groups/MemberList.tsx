@@ -63,7 +63,7 @@ export function MemberList({ members, currentUserRole, onPromote, onRemove }: Me
 
             {currentUserRole === 'admin' && role !== 'admin' && (
               <Menu as="div" className="relative inline-block text-left">
-              <MenuButton className="flex items-center rounded-full p-1.5 text-gray-400 hover:text-gray-600 focus:outline-none">
+              <MenuButton className="flex items-center rounded-lg p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 focus:outline-none">
                 <span className="sr-only">Open options</span>
                 <EllipsisVerticalIcon className="h-5 w-5" aria-hidden="true" />
               </MenuButton>

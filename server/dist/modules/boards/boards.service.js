@@ -271,6 +271,60 @@ export const getMyPostings = async (userId, cursor, limit, community) => {
     }));
     return { ...paginated, data };
 };
+async function resolveSkillIds(items) {
+    if (!items || items.length === 0)
+        return [];
+    const ids = [];
+    for (const item of items) {
+        if (!item)
+            continue;
+        const trimmed = typeof item === 'string' ? item.trim() : String(item).trim();
+        if (!trimmed)
+            continue;
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed);
+        if (isUuid) {
+            ids.push(trimmed);
+        }
+        else {
+            const existing = await query(`SELECT id FROM skills WHERE LOWER(name) = LOWER($1) LIMIT 1`, [trimmed]);
+            if (existing.rows.length > 0) {
+                ids.push(existing.rows[0].id);
+            }
+            else {
+                const inserted = await query(`INSERT INTO skills (name, category) VALUES ($1, 'Other') ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name RETURNING id`, [trimmed]);
+                ids.push(inserted.rows[0].id);
+            }
+        }
+    }
+    return Array.from(new Set(ids));
+}
+async function resolveInterestIds(items) {
+    if (!items || items.length === 0)
+        return [];
+    const ids = [];
+    for (const item of items) {
+        if (!item)
+            continue;
+        const trimmed = typeof item === 'string' ? item.trim() : String(item).trim();
+        if (!trimmed)
+            continue;
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed);
+        if (isUuid) {
+            ids.push(trimmed);
+        }
+        else {
+            const existing = await query(`SELECT id FROM interests WHERE LOWER(name) = LOWER($1) LIMIT 1`, [trimmed]);
+            if (existing.rows.length > 0) {
+                ids.push(existing.rows[0].id);
+            }
+            else {
+                const inserted = await query(`INSERT INTO interests (name, category) VALUES ($1, 'Other') ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name RETURNING id`, [trimmed]);
+                ids.push(inserted.rows[0].id);
+            }
+        }
+    }
+    return Array.from(new Set(ids));
+}
 export const createPosting = async (userId, data) => {
     const { rows: roleRows } = await query(`SELECT role FROM group_members WHERE group_id = $1 AND user_id = $2`, [data.groupId, userId]);
     if (!roleRows.length || roleRows[0].role !== 'admin') {
@@ -279,8 +333,18 @@ export const createPosting = async (userId, data) => {
     const expiresInHours = Number(data.expiresInHours) || 72; // default 72 hours (3 days)
     const expiresAt = new Date(Date.now() + expiresInHours * 60 * 60 * 1000);
     const community = ['project', 'hackathon', 'competition'].includes(data.community) ? data.community : 'project';
+    const rawSkills = [
+        ...(Array.isArray(data.requiredSkillIds) ? data.requiredSkillIds : []),
+        ...(Array.isArray(data.requiredSkills) ? data.requiredSkills : []),
+    ];
+    const requiredSkillIds = await resolveSkillIds(rawSkills);
+    const rawInterests = [
+        ...(Array.isArray(data.requiredInterestIds) ? data.requiredInterestIds : []),
+        ...(Array.isArray(data.requiredInterests) ? data.requiredInterests : []),
+    ];
+    const requiredInterestIds = await resolveInterestIds(rawInterests);
     const { rows } = await query(`INSERT INTO board_postings (group_id, title, description, community, roles_needed, required_skill_ids, required_interest_ids, slots_total, expires_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`, [data.groupId, data.title, data.description, community, data.rolesNeeded || [], data.requiredSkillIds || [], data.requiredInterestIds || [], 1, expiresAt]);
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`, [data.groupId, data.title, data.description, community, data.rolesNeeded || [], requiredSkillIds, requiredInterestIds, 1, expiresAt]);
     return rows[0];
 };
 export const updatePosting = async (postingId, userId, data) => {
