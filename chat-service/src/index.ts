@@ -14,26 +14,30 @@ const app = express();
 const server = http.createServer(app);
 
 // 1. HTTP Middleware
+// M-13: Security headers (X-Frame-Options, X-Content-Type-Options, etc.)
+app.use((_req, res, next) => {
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('X-XSS-Protection', '0');
+  next();
+});
 app.use(cors({ origin: env.CLIENT_URL, credentials: true }));
 app.use(express.json());
 
 // 2. HTTP Routes
 app.use('/api/chat', chatRoutes);
 
-// Root health check
+// Root health check — L-07: binary status only, no instanceId/port
 app.get('/health', (_req, res) => {
-  res.json({
-    status: 'ok',
-    service: 'chat-service',
-    instanceId: env.INSTANCE_ID,
-    timestamp: new Date().toISOString(),
-  });
+  res.json({ status: 'ok', service: 'chat-service', timestamp: new Date().toISOString() });
 });
 
 // 3. Socket.IO Setup with Redis Pub/Sub Adapter
+// M-12: Only allow the configured CLIENT_URL — no hardcoded localhost origins
 const io = new Server(server, {
   cors: {
-    origin: [env.CLIENT_URL, 'http://localhost:5173', 'http://localhost:3001'],
+    origin: env.CLIENT_URL,
     credentials: true,
   },
   transports: ['websocket', 'polling'],

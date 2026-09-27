@@ -20,7 +20,7 @@ const app = express();
 // Global middleware
 app.use(helmet());
 app.use(cors({ origin: env.CLIENT_URL, credentials: true }));
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '100kb' }));
 app.use(morgan(env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
 // Health check
@@ -39,7 +39,17 @@ app.use('/api/boards', boardRoutes);
 app.use('/api/communities', communityRoutes);
 
 // Internal microservice communication endpoints for Recommendation Service
-app.get('/api/internal/users-data', async (_req, res, next) => {
+// C-02: Protected by a shared GATEWAY_SECRET header check. These routes must
+// only be reachable by trusted internal services — not the public internet.
+const requireInternalSecret = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  const secret = req.headers['x-gateway-secret'];
+  if (!secret || secret !== env.GATEWAY_SECRET) {
+    return res.status(403).json({ error: 'Forbidden', code: 'FORBIDDEN' });
+  }
+  next();
+};
+
+app.get('/api/internal/users-data', requireInternalSecret, async (_req, res, next) => {
   try {
     const { getAllUsersForEmbedding } = await import('./modules/users/users.service.js');
     const users = await getAllUsersForEmbedding();
@@ -47,15 +57,15 @@ app.get('/api/internal/users-data', async (_req, res, next) => {
   } catch (err) { next(err); }
 });
 
-app.get('/api/internal/users-data/:id', async (req, res, next) => {
+app.get('/api/internal/users-data/:id', requireInternalSecret, async (req, res, next) => {
   try {
     const { getUserForEmbedding } = await import('./modules/users/users.service.js');
-    const user = await getUserForEmbedding(req.params.id);
+    const user = await getUserForEmbedding(req.params.id as string);
     res.json({ data: user });
   } catch (err) { next(err); }
 });
 
-app.get('/api/internal/boards-data', async (_req, res, next) => {
+app.get('/api/internal/boards-data', requireInternalSecret, async (_req, res, next) => {
   try {
     const { getAllBoardsForEmbedding } = await import('./modules/boards/boards.service.js');
     const boards = await getAllBoardsForEmbedding();
@@ -63,28 +73,28 @@ app.get('/api/internal/boards-data', async (_req, res, next) => {
   } catch (err) { next(err); }
 });
 
-app.get('/api/internal/boards-data/:id', async (req, res, next) => {
+app.get('/api/internal/boards-data/:id', requireInternalSecret, async (req, res, next) => {
   try {
     const { getBoardForEmbedding } = await import('./modules/boards/boards.service.js');
-    const board = await getBoardForEmbedding(req.params.id);
+    const board = await getBoardForEmbedding(req.params.id as string);
     res.json({ data: board });
   } catch (err) { next(err); }
 });
 
-app.get('/api/internal/connections/:userId', async (req, res, next) => {
+app.get('/api/internal/connections/:userId', requireInternalSecret, async (req, res, next) => {
   try {
     const { getConnectedUserIds } = await import('./modules/connections/connections.service.js');
-    const ids = await getConnectedUserIds(req.params.userId);
+    const ids = await getConnectedUserIds(req.params.userId as string);
     res.json({ data: ids });
   } catch (err) { next(err); }
 });
 
-app.get('/api/internal/second-degree-candidates/:userId', async (req, res, next) => {
+app.get('/api/internal/second-degree-candidates/:userId', requireInternalSecret, async (req, res, next) => {
   try {
     const { getSecondDegreeCandidates } = await import('./modules/connections/connections.service.js');
     const limit = parseInt(req.query.limit as string, 10) || 60;
     const offset = parseInt(req.query.offset as string, 10) || 0;
-    const candidates = await getSecondDegreeCandidates(req.params.userId, limit, offset);
+    const candidates = await getSecondDegreeCandidates(req.params.userId as string, limit, offset);
     res.json({ data: candidates });
   } catch (err) { next(err); }
 });

@@ -408,6 +408,20 @@ export const updatePosting = async (postingId: string, userId: string, data: any
   const params = [];
   let paramIndex = 1;
 
+  const mapping: Record<string, string> = {
+    title: 'title',
+    description: 'description',
+    community: 'community',
+    rolesNeeded: 'roles_needed',
+    roles_needed: 'roles_needed',
+    requiredSkills: 'required_skills',
+    required_skills: 'required_skills',
+    requiredInterests: 'required_interests',
+    required_interests: 'required_interests',
+    slotsTotal: 'slots_total',
+    slots_total: 'slots_total',
+  };
+
   for (const [key, value] of Object.entries(data)) {
     if (value !== undefined) {
       if (key === 'expiresInHours') {
@@ -416,8 +430,8 @@ export const updatePosting = async (postingId: string, userId: string, data: any
         updates.push(`"expires_at" = $${paramIndex}`);
         params.push(expiresAt);
         paramIndex++;
-      } else {
-        updates.push(`"${key.replace(/([A-Z])/g, "_$1").toLowerCase()}" = $${paramIndex}`);
+      } else if (mapping[key] !== undefined) {
+        updates.push(`"${mapping[key]}" = $${paramIndex}`);
         params.push(value);
         paramIndex++;
       }

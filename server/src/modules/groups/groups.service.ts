@@ -118,9 +118,18 @@ export const updateGroup = async (groupId: string, userId: string, data: any) =>
   const params = [];
   let paramIndex = 1;
 
+  const mapping: Record<string, string> = {
+    name: 'name',
+    description: 'description',
+    visibility: 'visibility',
+    maxMembers: 'max_members',
+    max_members: 'max_members',
+    status: 'status',
+  };
+
   for (const [key, value] of Object.entries(data)) {
-    if (value !== undefined) {
-      updates.push(`"${key.replace(/([A-Z])/g, "_$1").toLowerCase()}" = $${paramIndex}`);
+    if (mapping[key] !== undefined && value !== undefined) {
+      updates.push(`"${mapping[key]}" = $${paramIndex}`);
       params.push(value);
       paramIndex++;
     }

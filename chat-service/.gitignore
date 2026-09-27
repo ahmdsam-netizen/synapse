@@ -8,3 +8,10 @@ build/
 # Caches and TypeScript build info
 *.tsbuildinfo
 .cache/
+
+# Environment files — NEVER commit these
+.env
+.env.*
+*.env
+*.key
+*.pem

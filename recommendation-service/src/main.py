@@ -1,18 +1,49 @@
 import os
 import time
 import requests
+import threading
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Header, Query, HTTPException
-from src.config import CORE_SERVICE_URL, PORT
+from src.config import CORE_SERVICE_URL, PORT, GATEWAY_SECRET
 from src.embeddings import compute_weighted_user_embedding, compute_board_embedding
-from src.vectordb import init_vector_database, get_counts, upsert_user, upsert_board, search_peers, search_boards, has_user_vector, rank_second_degree_candidates, purge_stale_records
+from src.vectordb import (
+    init_vector_database,
+    get_counts,
+    upsert_user,
+    upsert_board,
+    search_peers,
+    search_boards,
+    has_user_vector,
+    rank_second_degree_candidates,
+    purge_stale_records,
+)
+
+def _internal_headers():
+    return {"x-gateway-secret": GATEWAY_SECRET} if GATEWAY_SECRET else {}
+
+def _verify_internal_access(x_gateway_secret: str | None):
+    if GATEWAY_SECRET and x_gateway_secret != GATEWAY_SECRET:
+        raise HTTPException(status_code=403, detail="Forbidden: unauthorized internal request")
+
+def _parse_safe_offset(cursor: str | None) -> int:
+    if not cursor:
+        return 0
+    try:
+        val = int(cursor)
+        return val if 0 <= val <= 10000 else 0
+    except (ValueError, TypeError):
+        return 0
 
 def run_startup_backfill():
     """Fetches all users and board postings from core service and computes initial embeddings."""
     print("[StartupBackfill] Checking and syncing vector backfill...")
     try:
         # 1. Sync users
-        users_res = requests.get(f"{CORE_SERVICE_URL}/api/internal/users-data", timeout=10)
+        users_res = requests.get(
+            f"{CORE_SERVICE_URL}/api/internal/users-data",
+            headers=_internal_headers(),
+            timeout=10
+        )
         if users_res.status_code == 200:
             users = users_res.json().get("data", [])
             valid_user_ids = [u["id"] for u in users]
@@ -34,7 +65,11 @@ def run_startup_backfill():
             print(f"[StartupBackfill] Successfully indexed {len(users)} users into Vector DB!")
 
         # 2. Sync boards
-        boards_res = requests.get(f"{CORE_SERVICE_URL}/api/internal/boards-data", timeout=10)
+        boards_res = requests.get(
+            f"{CORE_SERVICE_URL}/api/internal/boards-data",
+            headers=_internal_headers(),
+            timeout=10
+        )
         if boards_res.status_code == 200:
             boards = boards_res.json().get("data", [])
             print(f"[StartupBackfill] Processing embeddings for {len(boards)} board postings...")
@@ -64,7 +99,11 @@ def ensure_user_indexed(user_id: str):
     if not has_user_vector(user_id):
         try:
             print(f"[OnDemandIndex] User {user_id} vector missing. Fetching from core-service...")
-            res = requests.get(f"{CORE_SERVICE_URL}/api/internal/users-data/{user_id}", timeout=5)
+            res = requests.get(
+                f"{CORE_SERVICE_URL}/api/internal/users-data/{user_id}",
+                headers=_internal_headers(),
+                timeout=5
+            )
             if res.status_code == 200 and res.json().get("data"):
                 u = res.json()["data"]
                 vec = compute_weighted_user_embedding(u)
@@ -81,9 +120,7 @@ def ensure_user_indexed(user_id: str):
                 })
                 print(f"[OnDemandIndex] Successfully generated embedding for user {user_id}")
         except Exception as e:
-            print(f"[OnDemandIndex] Error indexing user {user_id}: {e}")
-
-import threading
+            print(f"[OnDemandIndex] Error indexing user: {e}")
 
 _backfill_lock = threading.Lock()
 _is_backfilling = False
@@ -127,35 +164,39 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Synapse Recommendation Service", lifespan=lifespan)
 
+# Health endpoint: safe binary status check without leaking DB volume metrics (M-16)
 @app.get("/health")
 def health():
-    counts = get_counts()
     return {
         "status": "ok",
         "service": "recommendation-service",
-        "vector_counts": counts
     }
 
 @app.get("/recommendations/similarity")
 def get_similarity_recommendations(
     x_user_id: str | None = Header(None, alias="x-user-id"),
-    userId: str | None = Query(None),
+    x_gateway_secret: str | None = Header(None, alias="x-gateway-secret"),
     limit: int = Query(30, ge=1, le=100),
     cursor: str | None = Query(None)
 ):
-    active_user_id = x_user_id or userId
-    if not active_user_id:
-        raise HTTPException(status_code=400, detail="Missing user identity (x-user-id header or userId query)")
+    _verify_internal_access(x_gateway_secret)
+    if not x_user_id:
+        raise HTTPException(status_code=401, detail="Missing user identity")
 
+    active_user_id = x_user_id
     ensure_data_populated()
     ensure_user_indexed(active_user_id)
 
-    offset = int(cursor) if cursor and cursor.isdigit() else 0
+    offset = _parse_safe_offset(cursor)
 
     # Fetch existing connections to exclude from recommendations
     exclude_ids = []
     try:
-        conn_res = requests.get(f"{CORE_SERVICE_URL}/api/internal/connections/{active_user_id}", timeout=3)
+        conn_res = requests.get(
+            f"{CORE_SERVICE_URL}/api/internal/connections/{active_user_id}",
+            headers=_internal_headers(),
+            timeout=3
+        )
         if conn_res.status_code == 200:
             exclude_ids = conn_res.json().get("data", [])
     except Exception as e:
@@ -173,24 +214,26 @@ def get_similarity_recommendations(
 @app.get("/recommendations/second-degree")
 def get_second_degree_recommendations(
     x_user_id: str | None = Header(None, alias="x-user-id"),
-    userId: str | None = Query(None),
+    x_gateway_secret: str | None = Header(None, alias="x-gateway-secret"),
     limit: int = Query(30, ge=1, le=100),
     cursor: str | None = Query(None)
 ):
-    active_user_id = x_user_id or userId
-    if not active_user_id:
-        raise HTTPException(status_code=400, detail="Missing user identity")
+    _verify_internal_access(x_gateway_secret)
+    if not x_user_id:
+        raise HTTPException(status_code=401, detail="Missing user identity")
 
+    active_user_id = x_user_id
     ensure_data_populated()
     ensure_user_indexed(active_user_id)
 
-    offset = int(cursor) if cursor and cursor.isdigit() else 0
+    offset = _parse_safe_offset(cursor)
 
     # 1. Query true 2nd-degree network candidates (friends of friends) from core service
     candidates = []
     try:
         cand_res = requests.get(
             f"{CORE_SERVICE_URL}/api/internal/second-degree-candidates/{active_user_id}?limit={limit}&offset={offset}",
+            headers=_internal_headers(),
             timeout=5
         )
         if cand_res.status_code == 200:
@@ -211,7 +254,11 @@ def get_second_degree_recommendations(
     # 3. Fallback: If user has no 2nd-degree connections in the graph, fall back to similarity
     exclude_ids = []
     try:
-        conn_res = requests.get(f"{CORE_SERVICE_URL}/api/internal/connections/{active_user_id}", timeout=3)
+        conn_res = requests.get(
+            f"{CORE_SERVICE_URL}/api/internal/connections/{active_user_id}",
+            headers=_internal_headers(),
+            timeout=3
+        )
         if conn_res.status_code == 200:
             exclude_ids = conn_res.json().get("data", [])
     except Exception:
@@ -228,18 +275,19 @@ def get_second_degree_recommendations(
 @app.get("/boards/matched")
 def get_matched_boards(
     x_user_id: str | None = Header(None, alias="x-user-id"),
-    userId: str | None = Query(None),
+    x_gateway_secret: str | None = Header(None, alias="x-gateway-secret"),
     limit: int = Query(30, ge=1, le=100),
     cursor: str | None = Query(None)
 ):
-    active_user_id = x_user_id or userId
-    if not active_user_id:
-        raise HTTPException(status_code=400, detail="Missing user identity")
+    _verify_internal_access(x_gateway_secret)
+    if not x_user_id:
+        raise HTTPException(status_code=401, detail="Missing user identity")
 
+    active_user_id = x_user_id
     ensure_data_populated()
     ensure_user_indexed(active_user_id)
 
-    offset = int(cursor) if cursor and cursor.isdigit() else 0
+    offset = _parse_safe_offset(cursor)
     matches = search_boards(active_user_id, limit=limit, offset=offset)
     next_cursor = str(offset + len(matches)) if len(matches) == limit else None
     return {
@@ -248,13 +296,19 @@ def get_matched_boards(
     }
 
 @app.post("/internal/backfill")
-def trigger_backfill():
+def trigger_backfill(x_gateway_secret: str | None = Header(None, alias="x-gateway-secret")):
+    _verify_internal_access(x_gateway_secret)
     run_startup_backfill()
-    return {"status": "ok", "counts": get_counts()}
+    return {"status": "ok"}
 
 @app.post("/internal/reindex/user/{user_id}")
-def reindex_user(user_id: str):
-    res = requests.get(f"{CORE_SERVICE_URL}/api/internal/users-data/{user_id}", timeout=5)
+def reindex_user(user_id: str, x_gateway_secret: str | None = Header(None, alias="x-gateway-secret")):
+    _verify_internal_access(x_gateway_secret)
+    res = requests.get(
+        f"{CORE_SERVICE_URL}/api/internal/users-data/{user_id}",
+        headers=_internal_headers(),
+        timeout=5
+    )
     if res.status_code != 200 or not res.json().get("data"):
         raise HTTPException(status_code=404, detail="User not found in core service")
     
@@ -274,8 +328,13 @@ def reindex_user(user_id: str):
     return {"status": "ok", "userId": user_id}
 
 @app.post("/internal/reindex/board/{posting_id}")
-def reindex_board(posting_id: str):
-    res = requests.get(f"{CORE_SERVICE_URL}/api/internal/boards-data/{posting_id}", timeout=5)
+def reindex_board(posting_id: str, x_gateway_secret: str | None = Header(None, alias="x-gateway-secret")):
+    _verify_internal_access(x_gateway_secret)
+    res = requests.get(
+        f"{CORE_SERVICE_URL}/api/internal/boards-data/{posting_id}",
+        headers=_internal_headers(),
+        timeout=5
+    )
     if res.status_code != 200 or not res.json().get("data"):
         raise HTTPException(status_code=404, detail="Board posting not found in core service")
     

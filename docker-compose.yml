@@ -5,7 +5,7 @@ services:
     image: postgres:16-alpine
     container_name: synapse-postgres
     ports:
-      - '5432:5432'
+      - '127.0.0.1:5432:5432'
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-synapse}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-synapse_dev}
@@ -22,7 +22,7 @@ services:
     image: redis:7-alpine
     container_name: synapse-redis
     ports:
-      - '6379:6379'
+      - '127.0.0.1:6379:6379'
     command: redis-server --appendonly yes
     volumes:
       - redisdata:/data
@@ -36,7 +36,7 @@ services:
     image: pgvector/pgvector:pg16
     container_name: synapse-vectordb
     ports:
-      - '5433:5432'
+      - '127.0.0.1:5433:5432'
     environment:
       POSTGRES_USER: ${VECTOR_POSTGRES_USER:-synapse}
       POSTGRES_PASSWORD: ${VECTOR_POSTGRES_PASSWORD:-synapse_dev}
@@ -56,17 +56,18 @@ services:
     image: synapse-core-service:latest
     container_name: synapse-core-service
     ports:
-      - '4000:4000'
+      - '127.0.0.1:4000:4000'
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgresql://synapse:synapse_dev@postgres:5432/synapse}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
       PORT: 4000
       NODE_ENV: ${NODE_ENV:-development}
-      CLIENT_URL: ${CLIENT_URL:-http://localhost:5173}
+      CLIENT_URL: ${CLIENT_URL:-http://localhost}
       JWT_SECRET: ${JWT_SECRET:-super-secret-jwt-key-minimum-32-characters-dev-key}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-super-secret-refresh-jwt-key-minimum-32-characters-dev}
       JWT_ACCESS_EXPIRY: ${JWT_ACCESS_EXPIRY:-15m}
       JWT_REFRESH_EXPIRY: ${JWT_REFRESH_EXPIRY:-7d}
+      GATEWAY_SECRET: ${GATEWAY_SECRET:-super-secret-internal-gateway-key-32-chars}
     depends_on:
       postgres:
         condition: service_healthy
@@ -84,12 +85,13 @@ services:
     image: synapse-recommendation-service:latest
     container_name: synapse-recommendation-service
     ports:
-      - '5001:5000'
+      - '127.0.0.1:5001:5000'
     environment:
       PORT: 5000
       CORE_SERVICE_URL: http://core-service:4000
-      VECTOR_DATABASE_URL: postgresql://synapse:synapse_dev@vectordb:5432/synapse_vectors
+      VECTOR_DATABASE_URL: ${VECTOR_DATABASE_URL:-postgresql://synapse:synapse_dev@vectordb:5432/synapse_vectors}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      GATEWAY_SECRET: ${GATEWAY_SECRET:-super-secret-internal-gateway-key-32-chars}
     depends_on:
       vectordb:
         condition: service_healthy
@@ -107,14 +109,15 @@ services:
     image: synapse-chat-service:latest
     container_name: synapse-chat-service-1
     ports:
-      - '4001:4001'
+      - '127.0.0.1:4001:4001'
     environment:
       PORT: 4001
       INSTANCE_ID: chat-1
       DATABASE_URL: ${DATABASE_URL:-postgresql://synapse:synapse_dev@postgres:5432/synapse}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
       JWT_SECRET: ${JWT_SECRET:-super-secret-jwt-key-minimum-32-characters-dev-key}
-      CLIENT_URL: ${CLIENT_URL:-http://localhost:5173}
+      GATEWAY_SECRET: ${GATEWAY_SECRET:-super-secret-internal-gateway-key-32-chars}
+      CLIENT_URL: ${CLIENT_URL:-http://localhost}
       NODE_ENV: ${NODE_ENV:-development}
     depends_on:
       postgres:
@@ -130,14 +133,15 @@ services:
     image: synapse-chat-service:latest
     container_name: synapse-chat-service-2
     ports:
-      - '4002:4002'
+      - '127.0.0.1:4002:4002'
     environment:
       PORT: 4002
       INSTANCE_ID: chat-2
       DATABASE_URL: ${DATABASE_URL:-postgresql://synapse:synapse_dev@postgres:5432/synapse}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
       JWT_SECRET: ${JWT_SECRET:-super-secret-jwt-key-minimum-32-characters-dev-key}
-      CLIENT_URL: ${CLIENT_URL:-http://localhost:5173}
+      GATEWAY_SECRET: ${GATEWAY_SECRET:-super-secret-internal-gateway-key-32-chars}
+      CLIENT_URL: ${CLIENT_URL:-http://localhost}
       NODE_ENV: ${NODE_ENV:-development}
     depends_on:
       chat-service-1:
@@ -164,8 +168,9 @@ services:
       CORE_SERVICE_URL: http://core-service:4000
       REC_SERVICE_URL: http://recommendation-service:5000
       CHAT_SERVICE_URLS: http://chat-service-1:4001,http://chat-service-2:4002
-      CLIENT_URL: ${CLIENT_URL:-http://localhost:5173}
+      CLIENT_URL: ${CLIENT_URL:-http://localhost}
       JWT_SECRET: ${JWT_SECRET:-super-secret-jwt-key-minimum-32-characters-dev-key}
+      GATEWAY_SECRET: ${GATEWAY_SECRET:-super-secret-internal-gateway-key-32-chars}
     depends_on:
       - core-service
       - recommendation-service
@@ -184,9 +189,10 @@ services:
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
       PORT: 4000
       NODE_ENV: ${NODE_ENV:-development}
-      CLIENT_URL: ${CLIENT_URL:-http://localhost:5173}
+      CLIENT_URL: ${CLIENT_URL:-http://localhost}
       JWT_SECRET: ${JWT_SECRET:-super-secret-jwt-key-minimum-32-characters-dev-key}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-super-secret-refresh-jwt-key-minimum-32-characters-dev}
+      GATEWAY_SECRET: ${GATEWAY_SECRET:-super-secret-internal-gateway-key-32-chars}
     depends_on:
       postgres:
         condition: service_healthy
@@ -206,7 +212,7 @@ services:
     image: synapse-client:latest
     container_name: synapse-client
     ports:
-      - '5173:5173'
+      - '80:80'
     environment:
       VITE_API_URL: http://gateway:3001
     depends_on:

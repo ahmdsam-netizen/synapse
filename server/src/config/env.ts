@@ -8,6 +8,9 @@ const envSchema = z.object({
   JWT_REFRESH_SECRET: z.string().min(32, { error: 'JWT_REFRESH_SECRET must be at least 32 characters' }),
   JWT_ACCESS_EXPIRY: z.string().optional().default('15m'),
   JWT_REFRESH_EXPIRY: z.string().optional().default('7d'),
+  // C-03: Shared secret used to verify that x-user-id headers were injected by
+  // the trusted API gateway and not crafted by a direct attacker.
+  GATEWAY_SECRET: z.string().min(16, { error: 'GATEWAY_SECRET must be at least 16 characters' }),
   PORT: z.coerce.number().optional().default(3001),
   NODE_ENV: z.enum(['development', 'production', 'test']).optional().default('development'),
   CLIENT_URL: z.string().optional().default('http://localhost:5173'),

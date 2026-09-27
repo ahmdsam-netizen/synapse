@@ -11,8 +11,10 @@ export const pool = new Pool({
 });
 
 pool.on('error', (err) => {
-  console.error('Unexpected error on idle client', err);
-  process.exit(-1);
+  // M-05: Log but do not exit — let the pool reconnect automatically.
+  // Calling process.exit() here would crash the server on any transient
+  // network blip between the service and the database.
+  console.error('Unexpected error on idle PostgreSQL client:', err.message);
 });
 
 export async function query<T extends pg.QueryResultRow = any>(

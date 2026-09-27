@@ -26,10 +26,10 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
 
   // Unknown errors
   console.error('Unhandled error:', err);
+  // M-01: Always return a generic message — never expose internal details to
+  // clients in production. Stack traces are only printed to server logs.
   res.status(500).json({
-    error: env.NODE_ENV === 'production'
-      ? 'Internal server error'
-      : err.message || 'Internal server error',
+    error: env.NODE_ENV === 'development' ? (err.message || 'Internal server error') : 'Internal server error',
     code: 'INTERNAL_ERROR',
   });
 };

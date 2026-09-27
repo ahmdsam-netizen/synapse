@@ -50,7 +50,9 @@ export const socketAuthMiddleware = (socket: Socket, next: (err?: Error) => void
     socket.data.instanceId = env.INSTANCE_ID;
 
     next();
-  } catch (err: any) {
-    return next(new Error(`Authentication error: ${err.message}`));
+  } catch {
+    // L-08: Do not forward the specific jsonwebtoken error message to the client
+    // (e.g. "jwt expired", "invalid signature") — that aids token-probing attacks.
+    return next(new Error('Authentication failed'));
   }
 };

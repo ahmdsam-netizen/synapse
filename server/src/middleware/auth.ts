@@ -8,8 +8,14 @@ import { UnauthorizedError } from '../utils/errors.js';
 
 export const requireAuth = async (req: AuthRequest, res: Response, next: NextFunction) => {
   // 1. Gateway Forwarded Identity (Microservices Mode)
+  // C-03: Only trust x-user-id if the request also carries the shared gateway
+  // secret — this confirms the headers were injected by our trusted API gateway
+  // and not crafted by an attacker reaching the service directly.
   const gatewayUserId = req.headers['x-user-id'] as string | undefined;
-  if (gatewayUserId) {
+  const gatewaySecret = req.headers['x-gateway-secret'] as string | undefined;
+  const expectedGatewaySecret = env.GATEWAY_SECRET;
+
+  if (gatewayUserId && expectedGatewaySecret && gatewaySecret === expectedGatewaySecret) {
     req.user = {
       id: gatewayUserId,
       email: (req.headers['x-user-email'] as string) || '',

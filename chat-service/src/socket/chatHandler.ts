@@ -177,6 +177,11 @@ export const registerChatHandlers = (io: Server, socket: AuthenticatedSocket) =>
       const { groupId, isTyping } = data;
       if (!groupId) return;
 
+      // M-09: Verify membership before broadcasting — prevents any authenticated
+      // user from spamming typing events into groups they do not belong to.
+      const member = await isGroupMember(groupId, userId);
+      if (!member) return;
+
       const sender = await getCachedUser(userId);
       const roomName = `group:${groupId}`;
 

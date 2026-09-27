@@ -16,7 +16,8 @@ const extractUserId = (req: Request): string | null => {
   if (authHeader?.startsWith('Bearer ')) {
     const token = authHeader.split(' ')[1];
     try {
-      const payload = jwt.verify(token, env.JWT_SECRET) as { id: string };
+      // H-07: algorithms restriction prevents alg:none and alg-confusion attacks
+      const payload = jwt.verify(token, env.JWT_SECRET, { algorithms: ['HS256'] }) as { id: string };
       return payload.id;
     } catch {}
   }
@@ -96,7 +97,7 @@ router.get('/groups/:groupId/messages', async (req: Request, res: Response) => {
     });
   } catch (err: any) {
     console.error(`[Chat REST Error:${env.INSTANCE_ID}]`, err.message);
-    res.status(500).json({ error: 'Failed to retrieve messages', details: err.message });
+    res.status(500).json({ error: 'Failed to retrieve messages', code: 'INTERNAL_ERROR' });
   }
 });
 
