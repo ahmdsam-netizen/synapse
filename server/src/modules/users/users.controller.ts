@@ -80,3 +80,9 @@ export async function searchInterestsHandler(req: Request, res: Response) {
   const interests = await usersService.searchInterests(q);
   res.json({ data: interests });
 }
+
+export async function searchCollegesHandler(req: Request, res: Response) {
+  const q = req.query.q as string || '';
+  const colleges = await usersService.searchColleges(q);
+  res.json({ data: colleges });
+}

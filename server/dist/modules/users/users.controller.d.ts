@@ -11,4 +11,5 @@ export declare function updateWorkItemHandler(req: Request, res: Response): Prom
 export declare function deleteWorkItemHandler(req: Request, res: Response): Promise<void>;
 export declare function searchSkillsHandler(req: Request, res: Response): Promise<void>;
 export declare function searchInterestsHandler(req: Request, res: Response): Promise<void>;
+export declare function searchCollegesHandler(req: Request, res: Response): Promise<void>;
 //# sourceMappingURL=users.controller.d.ts.map

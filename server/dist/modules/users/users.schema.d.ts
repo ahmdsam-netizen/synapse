@@ -12,6 +12,10 @@ export declare const updateProfileSchema: z.ZodObject<{
         project: "project";
     }>>;
     openToInvites: z.ZodOptional<z.ZodBoolean>;
+    collegeId: z.ZodOptional<z.ZodString>;
+    college_id: z.ZodOptional<z.ZodString>;
+    collegeName: z.ZodOptional<z.ZodString>;
+    college_name: z.ZodOptional<z.ZodString>;
 }, z.core.$strip>;
 export declare const addSkillSchema: z.ZodObject<{
     skillId: z.ZodOptional<z.ZodString>;

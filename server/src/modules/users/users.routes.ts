@@ -13,6 +13,7 @@ import {
   deleteWorkItemHandler,
   searchSkillsHandler,
   searchInterestsHandler,
+  searchCollegesHandler,
   getProfileHandler
 } from './users.controller.js';
 import {
@@ -42,6 +43,7 @@ router.delete('/me/work/:id', requireAuth, deleteWorkItemHandler);
 
 router.get('/skills', validate(taxonomyQuerySchema, 'query'), searchSkillsHandler);
 router.get('/interests', validate(taxonomyQuerySchema, 'query'), searchInterestsHandler);
+router.get('/colleges', validate(taxonomyQuerySchema, 'query'), searchCollegesHandler);
 
 router.get('/:id', requireAuth, validate(userIdParamSchema, 'params'), getProfileHandler);
 

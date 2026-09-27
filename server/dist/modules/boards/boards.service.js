@@ -326,6 +326,10 @@ async function resolveInterestIds(items) {
     return Array.from(new Set(ids));
 }
 export const createPosting = async (userId, data) => {
+    const { rows: groupRows } = await query(`SELECT is_community FROM groups WHERE id = $1`, [data.groupId]);
+    if (groupRows.length && groupRows[0].is_community) {
+        throw new BadRequestError('Posters/postings cannot be created for communities.');
+    }
     const { rows: roleRows } = await query(`SELECT role FROM group_members WHERE group_id = $1 AND user_id = $2`, [data.groupId, userId]);
     if (!roleRows.length || roleRows[0].role !== 'admin') {
         throw new ForbiddenError('Only admins can create postings');
@@ -466,8 +470,8 @@ export const approveRequest = async (requestId, adminId) => {
         await client.query(`UPDATE join_requests SET status = 'approved', reviewed_by = $1, reviewed_at = NOW() WHERE id = $2`, [adminId, requestId]);
         await client.query(`INSERT INTO group_members (group_id, user_id, role) VALUES ($1, $2, 'member') ON CONFLICT DO NOTHING`, [request.group_id, request.user_id]);
         if (request.posting_id) {
-            // Auto-delete posting and remove from board immediately when any applicant is selected/approved
-            await client.query(`DELETE FROM board_postings WHERE id = $1`, [request.posting_id]);
+            // Close posting so it leaves active boards without deleting join_requests
+            await client.query(`UPDATE board_postings SET status = 'closed', slots_filled = slots_total WHERE id = $1`, [request.posting_id]);
         }
         await client.query('COMMIT');
         return { success: true };
@@ -496,10 +500,10 @@ export const rejectRequest = async (requestId, adminId) => {
 export const getMyRequests = async (userId) => {
     const { rows } = await query(`SELECT jr.*, bp.title as posting_title, g.name as group_name
      FROM join_requests jr
-     JOIN board_postings bp ON bp.id = jr.posting_id
+     LEFT JOIN board_postings bp ON bp.id = jr.posting_id
      JOIN groups g ON g.id = jr.group_id
      WHERE jr.user_id = $1
-     ORDER BY jr.created_at DESC`, [userId]);
+     ORDER BY (jr.status = 'pending') DESC, jr.created_at DESC`, [userId]);
     return rows;
 };
 export const getAllBoardsForEmbedding = async () => {

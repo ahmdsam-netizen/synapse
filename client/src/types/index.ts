@@ -106,6 +106,43 @@ export interface Group {
   expiresAt?: string | null;
   expires_at?: string | null;
   durationDays?: number;
+  isCommunity?: boolean;
+  is_community?: boolean;
+}
+
+export interface Community {
+  id: string;
+  name: string;
+  description?: string | null;
+  creatorId?: string;
+  creator_id?: string;
+  visibility: 'global';
+  maxMembers: number;
+  max_members?: number;
+  memberCount: number;
+  member_count?: number;
+  status: 'open' | 'closed';
+  isCommunity: boolean;
+  is_community?: boolean;
+  isMember?: boolean;
+  userRole?: 'admin' | 'member' | null;
+  createdAt: string;
+  created_at?: string;
+  expiresAt?: null;
+  expires_at?: null;
+  members?: Array<{
+    id: string;
+    name: string;
+    avatarUrl?: string | null;
+    avatar_url?: string | null;
+    role: 'admin' | 'member';
+    joinedAt?: string;
+    joined_at?: string;
+    collegeName?: string | null;
+    college_name?: string | null;
+    branch?: string | null;
+    yearOfStudy?: number | null;
+  }>;
 }
 
 export interface BoardPosting {

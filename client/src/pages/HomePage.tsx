@@ -1,91 +1,69 @@
 import React from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import toast from 'react-hot-toast';
+import { Link } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
+import { PlusIcon, UserGroupIcon, GlobeAltIcon } from '@heroicons/react/24/outline';
 import { groupsApi } from '../api/groups';
-import { boardsApi } from '../api/boards';
+import { communitiesApi } from '../api/communities';
 import { GroupCard } from '../components/shared/GroupCard';
-import { EmptyState } from '../components/shared/EmptyState';
-import { StatusBadge } from '../components/shared/StatusBadge';
-import { timeAgo, getInitials } from '../lib/utils';
+import { CommunityCard } from '../components/communities/CommunityCard';
 import { CreateGroupOnlyModal } from '../components/board/CreateGroupOnlyModal';
+import { CreateCommunityModal } from '../components/communities/CreateCommunityModal';
 import { GroupDetail } from '../components/groups/GroupDetail';
-import { Group, JoinRequest, GroupInvite } from '../types';
+import { CommunityDetail } from '../components/communities/CommunityDetail';
+import { Group, Community } from '../types';
 
 export default function HomePage() {
-  const queryClient = useQueryClient();
-  const [isCreateModalOpen, setIsCreateModalOpen] = React.useState(false);
+  const [isCreateGroupModalOpen, setIsCreateGroupModalOpen] = React.useState(false);
+  const [isCreateCommunityModalOpen, setIsCreateCommunityModalOpen] = React.useState(false);
   const [selectedGroupId, setSelectedGroupId] = React.useState<string | null>(null);
+  const [selectedCommunityId, setSelectedCommunityId] = React.useState<string | null>(null);
 
-  const { data: groupsData, isPending: isLoadingGroups } = useQuery({
+  const { data: groupsData, isLoading: isLoadingGroups } = useQuery({
     queryKey: ['groups', 'me'],
     queryFn: () => groupsApi.getMyGroups(),
   });
 
-  const { data: requestsData, isPending: isLoadingRequests } = useQuery({
-    queryKey: ['my-requests'],
-    queryFn: () => boardsApi.getMyRequests(),
-  });
-
-  const { data: invitesData, isPending: isLoadingInvites } = useQuery({
-    queryKey: ['group-invites', 'me'],
-    queryFn: () => groupsApi.getMyInvites(),
-  });
-
-  const acceptInviteMutation = useMutation({
-    mutationFn: (inviteId: string) => groupsApi.acceptInvite(inviteId),
-    onSuccess: () => {
-      toast.success('Joined group successfully!');
-      queryClient.invalidateQueries({ queryKey: ['group-invites', 'me'] });
-      queryClient.invalidateQueries({ queryKey: ['groups', 'me'] });
-      queryClient.invalidateQueries({ queryKey: ['groups'] });
-    },
-    onError: (err: any) => {
-      toast.error(err.response?.data?.message || err.response?.data?.error || 'Failed to accept invitation');
-    },
-  });
-
-  const declineInviteMutation = useMutation({
-    mutationFn: (inviteId: string) => groupsApi.declineInvite(inviteId),
-    onSuccess: () => {
-      toast.success('Invitation declined');
-      queryClient.invalidateQueries({ queryKey: ['group-invites', 'me'] });
-    },
-    onError: (err: any) => {
-      toast.error(err.response?.data?.message || err.response?.data?.error || 'Failed to decline invitation');
+  const { data: myCommunitiesData, isLoading: isLoadingCommunities } = useQuery({
+    queryKey: ['communities', 'me'],
+    queryFn: async () => {
+      const res = await communitiesApi.getMyCommunities();
+      const body = res.data as any;
+      return Array.isArray(body) ? body : body.data || [];
     },
   });
 
   const groups: Group[] = Array.isArray((groupsData?.data as any)?.data)
     ? (groupsData?.data as any).data
     : Array.isArray(groupsData?.data)
-      ? (groupsData?.data as any)
-      : [];
-  const requests: JoinRequest[] = Array.isArray((requestsData?.data as any)?.data)
-    ? (requestsData?.data as any).data
-    : Array.isArray(requestsData?.data)
-      ? (requestsData?.data as any)
-      : [];
-  const invites: GroupInvite[] = Array.isArray((invitesData?.data as any)?.data)
-    ? (invitesData?.data as any).data
-    : Array.isArray(invitesData?.data)
-      ? (invitesData?.data as any)
-      : [];
+    ? (groupsData?.data as any)
+    : [];
 
-  const pendingInvitesCount = invites.filter((i) => i.status === 'pending').length;
+  const communities: Community[] = myCommunitiesData || [];
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+      {/* My Groups Section */}
       <div className="mb-8 flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">#myGroups</h1>
           <p className="mt-1 text-sm text-gray-500">Teams and engineering projects you are actively participating in</p>
         </div>
-        <button
-          onClick={() => setIsCreateModalOpen(true)}
-          className="inline-flex items-center justify-center rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-primary-700 focus:outline-none focus:ring-1 focus:ring-primary-600 cursor-pointer"
-        >
-          Create Group
-        </button>
+        <div className="flex items-center gap-3">
+          <Link
+            to="/boards"
+            className="inline-flex items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-xs hover:bg-gray-50 transition-colors cursor-pointer"
+          >
+            Browse Project Board
+          </Link>
+          <button
+            type="button"
+            onClick={() => setIsCreateGroupModalOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-xs hover:bg-primary-700 transition-colors cursor-pointer"
+          >
+            <PlusIcon className="h-4 w-4" />
+            <span>Create Group</span>
+          </button>
+        </div>
       </div>
 
       {isLoadingGroups ? (
@@ -107,181 +85,125 @@ export default function HomePage() {
           ))}
         </div>
       ) : (
-        <EmptyState
-          title="No Active Projects"
-          description="Explore open postings on the campus board to find a team matching your skills, or initialize a new group."
-          action={{
-            label: 'Browse Project Board',
-            onClick: () => window.location.href = '/boards',
-          }}
-        />
+        <div className="rounded-xl border border-gray-200 bg-white p-8 text-center shadow-xs">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary-50 text-primary-700">
+            <UserGroupIcon className="h-6 w-6" />
+          </div>
+          <h3 className="mt-3 text-base font-semibold text-gray-900">No active groups yet</h3>
+          <p className="mt-1 text-xs text-gray-500 max-w-md mx-auto">
+            Explore open postings on the campus board to find a team matching your skills, or initialize a new group.
+          </p>
+          <div className="mt-5 flex items-center justify-center gap-3">
+            <Link
+              to="/boards"
+              className="inline-flex items-center rounded-lg bg-primary-600 px-4 py-2 text-xs font-semibold text-white shadow-xs hover:bg-primary-700 transition-colors cursor-pointer"
+            >
+              Browse Project Board
+            </Link>
+            <button
+              type="button"
+              onClick={() => setIsCreateGroupModalOpen(true)}
+              className="inline-flex items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-xs font-semibold text-gray-700 shadow-xs hover:bg-gray-50 transition-colors cursor-pointer"
+            >
+              Create Group
+            </button>
+          </div>
+        </div>
       )}
 
-      {/* Group Invitations Section */}
-      <div className="mt-12">
-        <div className="flex items-center justify-between mb-6">
+      {/* My Communities Section */}
+      <div className="mt-16">
+        <div className="mb-6 flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
           <div>
-            <h2 className="text-xl font-bold text-gray-900">#groupInvites</h2>
-            <p className="mt-1 text-sm text-gray-500">Direct invitations from project leads to join their engineering teams</p>
+            <h2 className="text-xl font-bold text-gray-900">#myCommunities</h2>
+            <p className="mt-1 text-sm text-gray-500">
+              Permanent global interest networks and student societies you belong to
+            </p>
           </div>
-          {pendingInvitesCount > 0 && (
-            <span className="rounded-md bg-primary-50 px-2.5 py-0.5 text-xs font-semibold text-primary-800 border border-primary-200">
-              {pendingInvitesCount} pending
-            </span>
-          )}
+          <div className="flex items-center gap-3">
+            <Link
+              to="/communities"
+              className="inline-flex items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-xs hover:bg-gray-50 transition-colors cursor-pointer"
+            >
+              Browse All Communities
+            </Link>
+            <button
+              type="button"
+              onClick={() => setIsCreateCommunityModalOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-xs hover:bg-primary-700 transition-colors cursor-pointer"
+            >
+              <PlusIcon className="h-4 w-4" />
+              <span>Create Community</span>
+            </button>
+          </div>
         </div>
 
-        {isLoadingInvites ? (
-          <div className="space-y-4">
+        {isLoadingCommunities ? (
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {[...Array(2)].map((_, i) => (
-              <div key={i} className="h-24 animate-pulse rounded-xl bg-gray-200" />
+              <div key={i} className="h-36 animate-pulse rounded-xl bg-gray-200" />
             ))}
           </div>
-        ) : invites.length > 0 ? (
-          <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-            <ul className="divide-y divide-gray-200">
-              {invites.map((invite) => (
-                <li key={invite.id} className="p-4 sm:p-6 hover:bg-gray-50/60 transition-colors">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                    <div className="space-y-1.5 flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <h4 className="text-base font-semibold text-gray-900 truncate">
-                          {invite.groupName}
-                        </h4>
-                        <StatusBadge
-                          status={invite.status === 'pending' ? 'pending' : invite.status === 'accepted' ? 'approved' : 'rejected'}
-                        />
-                      </div>
-
-                      <div className="flex items-center gap-2 text-xs text-gray-500 flex-wrap">
-                        {invite.inviterAvatarUrl ? (
-                          <img
-                            src={invite.inviterAvatarUrl}
-                            alt={invite.inviterName}
-                            className="h-5 w-5 rounded-full object-cover"
-                          />
-                        ) : (
-                          <div className="h-5 w-5 rounded-full bg-primary-100 text-primary-700 text-[10px] flex items-center justify-center font-bold">
-                            {getInitials(invite.inviterName || 'Admin')}
-                          </div>
-                        )}
-                        <span>
-                          Invited by <span className="font-medium text-gray-700">{invite.inviterName}</span>
-                        </span>
-                        {invite.collegeName && (
-                          <>
-                            <span>•</span>
-                            <span>{invite.collegeName}</span>
-                          </>
-                        )}
-                        <span>•</span>
-                        <span>{timeAgo(invite.createdAt)}</span>
-                      </div>
-
-                      {invite.groupDescription && (
-                        <p className="text-xs text-gray-500 line-clamp-1">{invite.groupDescription}</p>
-                      )}
-
-                      {invite.note && (
-                        <div className="mt-2 rounded-lg bg-amber-50 border border-amber-200/70 px-3 py-2 text-xs text-amber-900">
-                          <span className="font-semibold text-amber-800">Note: </span>
-                          <span className="italic">"{invite.note}"</span>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
-                      {invite.status === 'pending' ? (
-                        <>
-                          <button
-                            onClick={() => acceptInviteMutation.mutate(invite.id)}
-                            disabled={acceptInviteMutation.isPending || declineInviteMutation.isPending}
-                            className="inline-flex items-center rounded-lg bg-primary-600 px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-primary-500 transition-colors disabled:opacity-50 cursor-pointer"
-                          >
-                            {acceptInviteMutation.isPending ? 'Joining...' : 'Accept & Join'}
-                          </button>
-                          <button
-                            onClick={() => declineInviteMutation.mutate(invite.id)}
-                            disabled={acceptInviteMutation.isPending || declineInviteMutation.isPending}
-                            className="inline-flex items-center rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 shadow-sm hover:bg-gray-50 transition-colors disabled:opacity-50 cursor-pointer"
-                          >
-                            Decline
-                          </button>
-                        </>
-                      ) : (
-                        <span className="text-xs font-medium text-gray-400 capitalize">
-                          {invite.status}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : (
-          <div className="rounded-xl border border-gray-200 bg-gray-50 p-8 text-center">
-            <p className="text-sm text-gray-500">No group invitations yet.</p>
-            <p className="text-xs text-gray-400 mt-1">When group admins invite you to join their projects, they'll appear here.</p>
-          </div>
-        )}
-      </div>
-
-      <div className="mt-12">
-        <div className="mb-6">
-          <h2 className="text-xl font-bold text-gray-900">#myJoinRequests</h2>
-          <p className="mt-1 text-sm text-gray-500">Track status of your membership applications to external engineering teams</p>
-        </div>
-        {isLoadingRequests ? (
-          <div className="space-y-4">
-            {[...Array(2)].map((_, i) => (
-              <div key={i} className="h-16 animate-pulse rounded-lg bg-gray-200" />
+        ) : communities.length > 0 ? (
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {communities.map((comm) => (
+              <CommunityCard
+                key={comm.id}
+                community={comm}
+                onClick={() => setSelectedCommunityId(comm.id)}
+              />
             ))}
           </div>
-        ) : requests.length > 0 ? (
-          <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-            <ul className="divide-y divide-gray-200">
-              {requests.map((request: any) => (
-                <li key={request.id} className="p-4 hover:bg-gray-50 sm:px-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h4 className="text-sm font-semibold text-gray-900">
-                        {request.postingTitle || request.posting_title || request.posting?.title || 'Group Membership'}
-                      </h4>
-                      <p className="mt-1 text-sm text-gray-500">
-                        Group: <span className="font-medium text-gray-700">{request.groupName || request.group_name || request.group?.name || 'Group'}</span>
-                      </p>
-                    </div>
-                    <div className="flex flex-col items-end gap-2">
-                      <StatusBadge 
-                        status={request.status === 'pending' ? 'pending' : request.status === 'approved' ? 'approved' : 'rejected'} 
-                      />
-                      <span className="text-xs text-gray-400">
-                        {timeAgo(request.createdAt || request.created_at)}
-                      </span>
-                    </div>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </div>
         ) : (
-          <div className="rounded-xl border border-gray-200 bg-gray-50 p-8 text-center">
-            <p className="text-sm text-gray-500">No outgoing join requests.</p>
-            <p className="text-xs text-gray-400 mt-1">Applications you submit to join project boards or groups will appear here.</p>
+          <div className="rounded-xl border border-gray-200 bg-white p-8 text-center shadow-xs">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary-50 text-primary-700">
+              <GlobeAltIcon className="h-6 w-6" />
+            </div>
+            <h3 className="mt-3 text-base font-semibold text-gray-900">No joined communities yet</h3>
+            <p className="mt-1 text-xs text-gray-500 max-w-md mx-auto">
+              Join permanent global communities with up to 1,000 students to share knowledge and connect across campuses.
+            </p>
+            <div className="mt-5 flex items-center justify-center gap-3">
+              <Link
+                to="/communities"
+                className="inline-flex items-center rounded-lg bg-primary-600 px-4 py-2 text-xs font-semibold text-white shadow-xs hover:bg-primary-700 transition-colors cursor-pointer"
+              >
+                Explore Communities
+              </Link>
+              <button
+                type="button"
+                onClick={() => setIsCreateCommunityModalOpen(true)}
+                className="inline-flex items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-xs font-semibold text-gray-700 shadow-xs hover:bg-gray-50 transition-colors cursor-pointer"
+              >
+                Create Community
+              </button>
+            </div>
           </div>
         )}
       </div>
 
       <CreateGroupOnlyModal
-        open={isCreateModalOpen}
-        onClose={() => setIsCreateModalOpen(false)}
+        open={isCreateGroupModalOpen}
+        onClose={() => setIsCreateGroupModalOpen(false)}
+      />
+
+      <CreateCommunityModal
+        open={isCreateCommunityModalOpen}
+        onClose={() => setIsCreateCommunityModalOpen(false)}
+        onSuccess={(id) => setSelectedCommunityId(id)}
       />
 
       {selectedGroupId && (
         <GroupDetail
           groupId={selectedGroupId}
           onClose={() => setSelectedGroupId(null)}
+        />
+      )}
+
+      {selectedCommunityId && (
+        <CommunityDetail
+          communityId={selectedCommunityId}
+          onClose={() => setSelectedCommunityId(null)}
         />
       )}
     </div>

@@ -28,6 +28,8 @@ export declare function updateWorkItem(userId: string, workItemId: string, data:
 export declare function deleteWorkItem(userId: string, workItemId: string): Promise<void>;
 export declare function searchSkills(q: string): Promise<any[]>;
 export declare function searchInterests(q: string): Promise<any[]>;
+export declare function searchColleges(q?: string): Promise<any[]>;
+export declare function addCollege(name: string, city?: string): Promise<any>;
 export declare function getAllUsersForEmbedding(): Promise<any[]>;
 export declare function getUserForEmbedding(userId: string): Promise<any>;
 //# sourceMappingURL=users.service.d.ts.map

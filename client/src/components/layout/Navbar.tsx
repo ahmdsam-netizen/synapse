@@ -21,8 +21,10 @@ export default function Navbar() {
   const navLinks = [
     { name: 'Home', path: '/' },
     { name: 'Boards', path: '/boards' },
+    { name: 'Communities', path: '/communities' },
     { name: 'Peers', path: '/peers' },
     { name: 'Recommendations', path: '/recommendations' },
+    { name: 'Requests', path: '/requests' },
   ];
 
   return (

@@ -8,6 +8,8 @@ import RecommendationsPage from './pages/RecommendationsPage';
 import BoardPage from './pages/BoardPage';
 import ProfilePage from './pages/ProfilePage';
 import ConnectionsPage from './pages/ConnectionsPage';
+import CommunitiesPage from './pages/CommunitiesPage';
+import RequestsPage from './pages/RequestsPage';
 import PrivacyPolicyPage from './pages/PrivacyPolicyPage';
 import TermsAndConditionsPage from './pages/TermsAndConditionsPage';
 import NotFoundPage from './pages/NotFoundPage';
@@ -29,9 +31,11 @@ export default function App() {
         <Route element={<AppLayout />}>
           <Route path="/" element={<HomePage />} />
           <Route path="/boards" element={<BoardPage />} />
+          <Route path="/communities" element={<CommunitiesPage />} />
           <Route path="/recommendations" element={<RecommendationsPage />} />
           <Route path="/connections" element={<ConnectionsPage />} />
           <Route path="/peers" element={<ConnectionsPage />} />
+          <Route path="/requests" element={<RequestsPage />} />
           <Route path="/profile/me" element={<ProfilePage />} />
           <Route path="/profile/:id" element={<ProfilePage />} />
         </Route>

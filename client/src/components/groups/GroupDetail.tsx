@@ -7,9 +7,10 @@ import { groupsApi } from '../../api/groups';
 import { StatusBadge } from '../shared/StatusBadge';
 import { MemberList } from './MemberList';
 import { AdminRequestQueue } from '../board/AdminRequestQueue';
-import { ChatPlaceholder } from './ChatPlaceholder';
+import { GroupChat } from '../chat/GroupChat';
 import { CreatePostingOnlyModal } from '../board/CreatePostingOnlyModal';
 import { Modal } from '../shared/Modal';
+import { useAuth } from '../../context/AuthContext';
 import { cn, formatTimeRemaining } from '../../lib/utils';
 
 interface GroupDetailProps {
@@ -46,6 +47,27 @@ export function GroupDetail({ groupId, onClose }: GroupDetailProps) {
   });
 
   const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
+  const [isConfirmLeaveOpen, setIsConfirmLeaveOpen] = useState(false);
+  const { user: currentUser } = useAuth();
+
+  const leaveMutation = useMutation({
+    mutationFn: () => groupsApi.removeMember(groupId, currentUser!.id),
+    onSuccess: () => {
+      toast.success('You have left the group');
+      queryClient.invalidateQueries({ queryKey: ['groups'] });
+      queryClient.invalidateQueries({ queryKey: ['groups', 'me'] });
+      queryClient.invalidateQueries({ queryKey: ['groups', groupId] });
+      setIsConfirmLeaveOpen(false);
+      onClose();
+    },
+    onError: (err: any) => {
+      toast.error(
+        err.response?.data?.message ||
+        err.response?.data?.error ||
+        'Failed to leave group'
+      );
+    },
+  });
 
   const deleteMutation = useMutation({
     mutationFn: () => groupsApi.deleteGroup(groupId),
@@ -67,8 +89,10 @@ export function GroupDetail({ groupId, onClose }: GroupDetailProps) {
   });
 
   const groupDetail: any = (groupData?.data as any)?.data || (groupData?.data as any)?.group || groupData?.data;
-  const currentUserRole = groupDetail?.viewerRole || groupDetail?.userRole || (groupDetail?.members || []).find((m: any) => m.id === groupDetail?.viewerId)?.role;
+  const currentUserRole = groupDetail?.viewerRole || groupDetail?.userRole || (groupDetail?.members || []).find((m: any) => m.id === groupDetail?.viewerId || m.id === currentUser?.id)?.role;
   const memberCount = groupDetail?.memberCount ?? groupDetail?.member_count ?? groupDetail?.members?.length ?? 0;
+  const adminCount = (groupDetail?.members || []).filter((m: any) => m.role === 'admin').length;
+  const isSoleAdmin = currentUserRole === 'admin' && adminCount <= 1;
   const maxMembers = groupDetail?.maxMembers ?? groupDetail?.max_members;
   const pendingRequests = groupDetail?.pendingRequestCount ?? groupDetail?.pending_request_count ?? 0;
   const timeLeft = formatTimeRemaining(groupDetail?.expiresAt || groupDetail?.expires_at);
@@ -87,6 +111,16 @@ export function GroupDetail({ groupId, onClose }: GroupDetailProps) {
                       {isPending ? 'Loading...' : groupDetail?.name}
                     </DialogTitle>
                     <div className="ml-3 flex h-7 items-center gap-2">
+                      {currentUserRole && (
+                        <button
+                          type="button"
+                          onClick={() => setIsConfirmLeaveOpen(true)}
+                          title="Leave Group"
+                          className="rounded-lg border border-gray-300 px-2.5 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50 focus:outline-none transition-colors cursor-pointer"
+                        >
+                          Leave Group
+                        </button>
+                      )}
                       {currentUserRole === 'admin' && (
                         <button
                           type="button"
@@ -199,7 +233,11 @@ export function GroupDetail({ groupId, onClose }: GroupDetailProps) {
                       )}
 
                       <TabPanel>
-                        <ChatPlaceholder />
+                        <GroupChat
+                          groupId={groupId}
+                          isMember={!!currentUserRole}
+                          groupName={groupDetail?.name}
+                        />
                       </TabPanel>
                     </TabPanels>
                   </TabGroup>
@@ -248,6 +286,45 @@ export function GroupDetail({ groupId, onClose }: GroupDetailProps) {
               >
                 {deleteMutation.isPending ? 'Deleting...' : 'Delete Group'}
               </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {isConfirmLeaveOpen && (
+        <Modal
+          open={isConfirmLeaveOpen}
+          onClose={() => setIsConfirmLeaveOpen(false)}
+          title="Leave Group"
+        >
+          <div className="space-y-4">
+            {isSoleAdmin && memberCount > 1 ? (
+              <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800">
+                You are currently the only admin of <span className="font-semibold">{groupDetail?.name}</span>. Please promote another member to admin in the Members tab before leaving.
+              </div>
+            ) : (
+              <p className="text-sm text-gray-600">
+                Are you sure you want to leave <span className="font-semibold text-gray-900">{groupDetail?.name}</span>? You will lose access to team discussions and updates.
+              </p>
+            )}
+            <div className="flex justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setIsConfirmLeaveOpen(false)}
+                className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 cursor-pointer"
+              >
+                Cancel
+              </button>
+              {(!isSoleAdmin || memberCount <= 1) && (
+                <button
+                  type="button"
+                  onClick={() => leaveMutation.mutate()}
+                  disabled={leaveMutation.isPending}
+                  className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow-xs hover:bg-red-500 disabled:opacity-50 cursor-pointer"
+                >
+                  {leaveMutation.isPending ? 'Leaving...' : 'Leave Group'}
+                </button>
+              )}
             </div>
           </div>
         </Modal>

@@ -27,13 +27,6 @@ export function GroupCard({ group, onClick, role, pendingRequestsCount = 0 }: Gr
 
       <div className="flex items-start justify-between">
         <h3 className="text-lg font-semibold text-gray-900 line-clamp-1">{group.name}</h3>
-        <div className="flex items-center gap-2">
-          {group.status === 'open' ? (
-            <div className="h-2.5 w-2.5 rounded-full bg-green-500" title="Open" />
-          ) : (
-            <div className="h-2.5 w-2.5 rounded-full bg-gray-400" title="Closed" />
-          )}
-        </div>
       </div>
 
       <p className="text-sm text-gray-600 line-clamp-2 min-h-[2.5rem]">

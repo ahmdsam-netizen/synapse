@@ -196,8 +196,8 @@ export async function listPending(userId) {
      FROM connections c
      JOIN users u ON u.id = (CASE WHEN c.receiver_id = $1 THEN c.requester_id ELSE c.receiver_id END)
      LEFT JOIN colleges col ON col.id = u.college_id
-     WHERE (c.receiver_id = $1 OR c.requester_id = $1) AND c.status = 'pending'
-     ORDER BY c.created_at DESC`, [userId]);
+     WHERE (c.receiver_id = $1 OR c.requester_id = $1) AND c.status IN ('pending', 'accepted')
+     ORDER BY (c.status = 'pending') DESC, c.created_at DESC`, [userId]);
     return res.rows.map(r => ({
         id: r.id,
         requesterId: r.requester_id,
@@ -205,7 +205,7 @@ export async function listPending(userId) {
         receiverId: r.receiver_id,
         receiver_id: r.receiver_id,
         direction: r.direction,
-        status: r.status,
+        status: r.status === 'accepted' ? 'approved' : r.status,
         createdAt: r.created_at,
         created_at: r.created_at,
         userId: r.user_id,

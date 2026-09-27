@@ -67,4 +67,9 @@ export async function searchInterestsHandler(req, res) {
     const interests = await usersService.searchInterests(q);
     res.json({ data: interests });
 }
+export async function searchCollegesHandler(req, res) {
+    const q = req.query.q || '';
+    const colleges = await usersService.searchColleges(q);
+    res.json({ data: colleges });
+}
 //# sourceMappingURL=users.controller.js.map

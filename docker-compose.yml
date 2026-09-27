@@ -96,6 +96,56 @@ services:
     volumes:
       - ./recommendation-service:/app
 
+  chat-service-1:
+    build:
+      context: ./chat-service
+      dockerfile: Dockerfile
+    container_name: synapse-chat-service-1
+    ports:
+      - '4001:4001'
+    environment:
+      PORT: 4001
+      INSTANCE_ID: chat-1
+      DATABASE_URL: ${DATABASE_URL:-postgresql://synapse:synapse_dev@postgres:5432/synapse}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      JWT_SECRET: ${JWT_SECRET:-super-secret-jwt-key-minimum-32-characters-dev-key}
+      CLIENT_URL: ${CLIENT_URL:-http://localhost:5173}
+      NODE_ENV: ${NODE_ENV:-development}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./chat-service:/app
+      - /app/node_modules
+    command: npm run dev
+
+  chat-service-2:
+    build:
+      context: ./chat-service
+      dockerfile: Dockerfile
+    container_name: synapse-chat-service-2
+    ports:
+      - '4002:4002'
+    environment:
+      PORT: 4002
+      INSTANCE_ID: chat-2
+      DATABASE_URL: ${DATABASE_URL:-postgresql://synapse:synapse_dev@postgres:5432/synapse}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      JWT_SECRET: ${JWT_SECRET:-super-secret-jwt-key-minimum-32-characters-dev-key}
+      CLIENT_URL: ${CLIENT_URL:-http://localhost:5173}
+      NODE_ENV: ${NODE_ENV:-development}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./chat-service:/app
+      - /app/node_modules
+    command: npm run dev
+
   gateway:
     build:
       context: ./gateway
@@ -107,11 +157,14 @@ services:
       PORT: 3001
       CORE_SERVICE_URL: http://core-service:4000
       REC_SERVICE_URL: http://recommendation-service:5000
+      CHAT_SERVICE_URLS: http://chat-service-1:4001,http://chat-service-2:4002
       CLIENT_URL: ${CLIENT_URL:-http://localhost:5173}
       JWT_SECRET: ${JWT_SECRET:-super-secret-jwt-key-minimum-32-characters-dev-key}
     depends_on:
       - core-service
       - recommendation-service
+      - chat-service-1
+      - chat-service-2
     volumes:
       - ./gateway:/app
       - /app/node_modules

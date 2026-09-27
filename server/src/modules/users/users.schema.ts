@@ -8,6 +8,10 @@ export const updateProfileSchema = z.object({
   branch: z.string().max(100).optional(),
   lookingFor: z.enum(['project', 'event', 'both', 'none']).optional(),
   openToInvites: z.boolean().optional(),
+  collegeId: z.string().uuid().optional(),
+  college_id: z.string().uuid().optional(),
+  collegeName: z.string().min(1).max(255).optional(),
+  college_name: z.string().min(1).max(255).optional(),
 });
 
 export const addSkillSchema = z.object({

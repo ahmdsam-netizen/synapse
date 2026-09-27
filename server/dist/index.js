@@ -11,6 +11,7 @@ import recommendationRoutes from './modules/recommendations/recommendations.rout
 import searchRoutes from './modules/search/search.routes.js';
 import groupRoutes from './modules/groups/groups.routes.js';
 import boardRoutes from './modules/boards/boards.routes.js';
+import communityRoutes from './modules/communities/communities.routes.js';
 import { pool } from './config/database.js';
 const app = express();
 // Global middleware
@@ -30,6 +31,7 @@ app.use('/api/recommendations', recommendationRoutes);
 app.use('/api/search', searchRoutes);
 app.use('/api/groups', groupRoutes);
 app.use('/api/boards', boardRoutes);
+app.use('/api/communities', communityRoutes);
 // Internal microservice communication endpoints for Recommendation Service
 app.get('/api/internal/users-data', async (_req, res, next) => {
     try {
@@ -126,8 +128,11 @@ pool.query(`
   CREATE INDEX IF NOT EXISTS idx_group_invites_invitee ON group_invites(invitee_id, status, created_at DESC);
   CREATE INDEX IF NOT EXISTS idx_group_invites_group ON group_invites(group_id, status);
 
+  ALTER TABLE groups ADD COLUMN IF NOT EXISTS is_community BOOLEAN NOT NULL DEFAULT FALSE;
+  CREATE INDEX IF NOT EXISTS idx_groups_is_community ON groups(is_community);
+
   ALTER TABLE groups ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP DEFAULT (NOW() + INTERVAL '30 days');
-  UPDATE groups SET expires_at = NOW() + INTERVAL '30 days' WHERE expires_at IS NULL;
+  UPDATE groups SET expires_at = NOW() + INTERVAL '30 days' WHERE expires_at IS NULL AND is_community = FALSE;
   CREATE INDEX IF NOT EXISTS idx_groups_expires_at ON groups(expires_at);
 `).catch((err) => {
     console.error('Schema initialization check error:', err.message);
@@ -148,7 +153,7 @@ async function cleanupExpiredPostings() {
 // 2. Groups cleanup: runs every 1 hour (cascades to members, postings, invitations, join_requests)
 async function cleanupExpiredGroups() {
     try {
-        const res = await pool.query(`DELETE FROM groups WHERE expires_at IS NOT NULL AND expires_at <= NOW()`);
+        const res = await pool.query(`DELETE FROM groups WHERE expires_at IS NOT NULL AND expires_at <= NOW() AND is_community = FALSE`);
         if (res.rowCount && res.rowCount > 0) {
             console.log(`[Cron:Groups] Cleaned up ${res.rowCount} expired group(s)`);
         }

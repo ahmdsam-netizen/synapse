@@ -33,7 +33,8 @@ export const getMyGroups = async (userId) => {
             ELSE 0 END as pending_request_count
      FROM groups g
      JOIN group_members gm ON gm.group_id = g.id AND gm.user_id = $1
-     WHERE (g.expires_at IS NULL OR g.expires_at > NOW())
+     WHERE (g.is_community IS FALSE OR g.is_community IS NULL)
+       AND (g.expires_at IS NULL OR g.expires_at > NOW())
      ORDER BY gm.joined_at DESC`, [userId]);
     return rows.map(r => ({
         ...r,

@@ -356,6 +356,14 @@ async function resolveInterestIds(items: string[]): Promise<string[]> {
 }
 
 export const createPosting = async (userId: string, data: any) => {
+  const { rows: groupRows } = await query(
+    `SELECT is_community FROM groups WHERE id = $1`,
+    [data.groupId]
+  );
+  if (groupRows.length && groupRows[0].is_community) {
+    throw new BadRequestError('Posters/postings cannot be created for communities.');
+  }
+
   const { rows: roleRows } = await query(
     `SELECT role FROM group_members WHERE group_id = $1 AND user_id = $2`,
     [data.groupId, userId]
@@ -544,8 +552,11 @@ export const approveRequest = async (requestId: string, adminId: string) => {
     );
 
     if (request.posting_id) {
-      // Auto-delete posting and remove from board immediately when any applicant is selected/approved
-      await client.query(`DELETE FROM board_postings WHERE id = $1`, [request.posting_id]);
+      // Close posting so it leaves active boards without deleting join_requests
+      await client.query(
+        `UPDATE board_postings SET status = 'closed', slots_filled = slots_total WHERE id = $1`,
+        [request.posting_id]
+      );
     }
 
     await client.query('COMMIT');
@@ -578,10 +589,10 @@ export const getMyRequests = async (userId: string) => {
   const { rows } = await query(
     `SELECT jr.*, bp.title as posting_title, g.name as group_name
      FROM join_requests jr
-     JOIN board_postings bp ON bp.id = jr.posting_id
+     LEFT JOIN board_postings bp ON bp.id = jr.posting_id
      JOIN groups g ON g.id = jr.group_id
      WHERE jr.user_id = $1
-     ORDER BY jr.created_at DESC`,
+     ORDER BY (jr.status = 'pending') DESC, jr.created_at DESC`,
     [userId]
   );
   return rows;

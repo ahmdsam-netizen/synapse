@@ -8,8 +8,15 @@ export const usersApi = {
   getProfile: (id: string) =>
     apiClient.get<{ user: UserProfile }>(`/users/${id}`),
 
-  updateProfile: (data: Partial<Pick<User, 'name' | 'bio' | 'avatarUrl' | 'yearOfStudy' | 'branch' | 'lookingFor' | 'openToInvites'>>) =>
+  updateProfile: (data: Partial<Pick<User, 'name' | 'bio' | 'avatarUrl' | 'yearOfStudy' | 'branch' | 'lookingFor' | 'openToInvites'>> & {
+    collegeId?: string;
+    collegeName?: string;
+    city?: string;
+  }) =>
     apiClient.put<{ user: User }>('/users/me', data),
+
+  getColleges: (q?: string) =>
+    apiClient.get<{ colleges: Array<{ id: string; name: string; city?: string }> }>('/users/colleges', { params: q ? { q } : undefined }),
 
   addSkill: (dataOrId: string | { skillId?: string; name?: string; proficiency: string }, proficiency?: string) => {
     if (typeof dataOrId === 'string') {

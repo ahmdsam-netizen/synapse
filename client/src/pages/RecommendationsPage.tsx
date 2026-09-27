@@ -1,6 +1,10 @@
 import { useState } from 'react';
 import { recommendationsApi } from '../api/recommendations';
 import { boardsApi } from '../api/boards';
+import {
+  UserGroupIcon,
+  ClipboardDocumentListIcon,
+} from '@heroicons/react/24/outline';
 import { RecommendedUser, BoardPosting } from '../types';
 import { UserCard } from '../components/shared/UserCard';
 import { SkeletonCard } from '../components/shared/SkeletonCard';
@@ -9,6 +13,7 @@ import { PostingDetailView } from '../components/board/PostingDetailView';
 import { JoinRequestModal } from '../components/board/JoinRequestModal';
 import { EmptyState } from '../components/shared/EmptyState';
 import { InfiniteScrollLoader } from '../components/shared/InfiniteScrollLoader';
+import { PageTabButton } from '../components/shared/PageTabButton';
 import { cn } from '../lib/utils';
 import { useInfiniteScroll } from '../hooks/useInfiniteScroll';
 
@@ -113,31 +118,23 @@ export default function RecommendationsPage() {
       </div>
 
       {/* Navigation Tabs: #recommendation & #recommendedBoard */}
-      <div className="mb-6 flex space-x-1 rounded-xl bg-gray-100 p-1 max-w-sm">
-        <button
-          type="button"
+      <div className="mb-8 grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-2xl">
+        <PageTabButton
+          active={activeTab === 'users'}
           onClick={() => setActiveTab('users')}
-          className={cn(
-            "w-full rounded-lg py-2.5 text-sm font-semibold transition-all cursor-pointer text-center",
-            activeTab === 'users'
-              ? "bg-white text-primary-700 shadow-xs"
-              : "text-gray-600 hover:text-gray-900"
-          )}
-        >
-          #recommendation
-        </button>
-        <button
-          type="button"
+          icon={UserGroupIcon}
+          title="#recommendation"
+          subtitle="Matched peer collaborators"
+          count={users.length > 0 ? users.length : null}
+        />
+        <PageTabButton
+          active={activeTab === 'board'}
           onClick={() => setActiveTab('board')}
-          className={cn(
-            "w-full rounded-lg py-2.5 text-sm font-semibold transition-all cursor-pointer text-center",
-            activeTab === 'board'
-              ? "bg-white text-primary-700 shadow-xs"
-              : "text-gray-600 hover:text-gray-900"
-          )}
-        >
-          #recommendedBoard
-        </button>
+          icon={ClipboardDocumentListIcon}
+          title="#recommendedBoard"
+          subtitle="Matched project postings"
+          count={matchedPostings.length > 0 ? matchedPostings.length : null}
+        />
       </div>
 
       {/* View Content */}

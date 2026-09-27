@@ -1,11 +1,11 @@
 import { useState } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { usersApi } from '../../api/users';
 import { connectionsApi } from '../../api/connections';
 import CompletenessBar from './CompletenessBar';
 import { InviteToGroupModal } from '../groups/InviteToGroupModal';
 import { getInitials } from '../../lib/utils';
-import { UserGroupIcon } from '@heroicons/react/24/outline';
+import { UserGroupIcon, AcademicCapIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 
 interface ProfileHeaderProps {
@@ -16,6 +16,11 @@ interface ProfileHeaderProps {
 export default function ProfileHeader({ profile, isOwnProfile }: ProfileHeaderProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
+
+  const collegeDisplayName = profile.college?.name || profile.collegeName || profile.college_name || '';
+  const cityDisplayName = profile.city || profile.college?.city || '';
+  const collegeIdVal = profile.college?.id || profile.collegeId || profile.college_id || '';
+
   const [formData, setFormData] = useState({
     name: profile.name || `${profile.first_name || ''} ${profile.last_name || ''}`.trim(),
     bio: profile.bio || '',
@@ -23,15 +28,45 @@ export default function ProfileHeader({ profile, isOwnProfile }: ProfileHeaderPr
     branch: profile.branch || '',
     lookingFor: profile.lookingFor || profile.looking_for || 'none',
     openToInvites: profile.openToInvites ?? profile.open_to_invites ?? true,
+    collegeName: collegeDisplayName,
+    collegeId: collegeIdVal,
+    city: cityDisplayName,
   });
 
   const queryClient = useQueryClient();
 
+  const { data: collegesRes } = useQuery({
+    queryKey: ['colleges'],
+    queryFn: () => usersApi.getColleges(),
+    staleTime: 60000,
+  });
+  const colleges = collegesRes?.data?.colleges || [];
+
+  const startEditing = () => {
+    setFormData({
+      name: profile.name || `${profile.first_name || ''} ${profile.last_name || ''}`.trim(),
+      bio: profile.bio || '',
+      yearOfStudy: profile.yearOfStudy ?? profile.year_of_study ?? 1,
+      branch: profile.branch || '',
+      lookingFor: profile.lookingFor || profile.looking_for || 'none',
+      openToInvites: profile.openToInvites ?? profile.open_to_invites ?? true,
+      collegeName: profile.college?.name || profile.collegeName || profile.college_name || '',
+      collegeId: profile.college?.id || profile.collegeId || profile.college_id || '',
+      city: profile.city || profile.college?.city || '',
+    });
+    setIsEditing(true);
+  };
+
   const updateProfileMutation = useMutation({
     mutationFn: (data: any) => usersApi.updateProfile(data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['profile', 'me'] });
+      queryClient.invalidateQueries({ queryKey: ['profile'] });
+      queryClient.invalidateQueries({ queryKey: ['colleges'] });
+      toast.success('Profile updated successfully');
       setIsEditing(false);
+    },
+    onError: (err: any) => {
+      toast.error(err.response?.data?.message || 'Failed to update profile');
     },
   });
 
@@ -80,7 +115,17 @@ export default function ProfileHeader({ profile, isOwnProfile }: ProfileHeaderPr
   });
 
   const handleSave = () => {
-    updateProfileMutation.mutate(formData);
+    updateProfileMutation.mutate({
+      name: formData.name,
+      bio: formData.bio,
+      yearOfStudy: formData.yearOfStudy,
+      branch: formData.branch,
+      lookingFor: formData.lookingFor,
+      openToInvites: formData.openToInvites,
+      collegeName: formData.collegeName.trim() || undefined,
+      collegeId: formData.collegeId || undefined,
+      city: formData.city.trim() || undefined,
+    });
   };
 
   const displayName = profile.name || `${profile.first_name || ''} ${profile.last_name || ''}`.trim() || 'Student';
@@ -112,6 +157,9 @@ export default function ProfileHeader({ profile, isOwnProfile }: ProfileHeaderPr
           {isEditing ? (
             <div className="space-y-4 w-full">
               <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1">
+                  Full Name
+                </label>
                 <input
                   type="text"
                   value={formData.name}
@@ -120,41 +168,112 @@ export default function ProfileHeader({ profile, isOwnProfile }: ProfileHeaderPr
                   placeholder="Name"
                 />
               </div>
-              
-              <div className="flex gap-4">
-                <input
-                  type="number"
-                  value={formData.yearOfStudy}
-                  onChange={(e) => setFormData({...formData, yearOfStudy: parseInt(e.target.value, 10) || 1})}
-                  className="border border-gray-300 rounded-lg px-3 py-2 w-1/3 text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                  placeholder="Year of Study"
-                />
-                <input
-                  type="text"
-                  value={formData.branch}
-                  onChange={(e) => setFormData({...formData, branch: e.target.value})}
-                  className="border border-gray-300 rounded-lg px-3 py-2 w-2/3 text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                  placeholder="Branch/Major"
-                />
+
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1">
+                  College / University
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <div className="sm:col-span-2 relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
+                      <AcademicCapIcon className="h-4 w-4 text-gray-400" />
+                    </div>
+                    <input
+                      type="text"
+                      list="colleges-datalist"
+                      value={formData.collegeName}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        const matched = colleges.find(
+                          (c: any) => c.name.toLowerCase() === val.toLowerCase()
+                        );
+                        setFormData((prev) => ({
+                          ...prev,
+                          collegeName: val,
+                          collegeId: matched ? matched.id : '',
+                          city: matched?.city || prev.city,
+                        }));
+                      }}
+                      className="border border-gray-300 rounded-lg pl-9 pr-3 py-2 w-full text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                      placeholder="Select or enter college / university name..."
+                    />
+                    <datalist id="colleges-datalist">
+                      {colleges.map((c: any) => (
+                        <option key={c.id} value={c.name}>
+                          {c.city ? `${c.name} (${c.city})` : c.name}
+                        </option>
+                      ))}
+                    </datalist>
+                  </div>
+                  <div>
+                    <input
+                      type="text"
+                      value={formData.city}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, city: e.target.value }))}
+                      className="border border-gray-300 rounded-lg px-3 py-2 w-full text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                      placeholder="Campus / City"
+                    />
+                  </div>
+                </div>
+                <p className="text-xs text-gray-400 mt-1">
+                  Choose from existing colleges or enter your college and campus city.
+                </p>
               </div>
               
-              <select
-                value={formData.lookingFor}
-                onChange={(e) => setFormData({...formData, lookingFor: e.target.value})}
-                className="border border-gray-300 rounded-lg px-3 py-2 w-full text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-              >
-                <option value="none">Not looking right now</option>
-                <option value="project">Looking for Projects</option>
-                <option value="event">Looking for Events</option>
-                <option value="both">Both</option>
-              </select>
+              <div className="flex gap-4">
+                <div className="w-1/3">
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1">
+                    Year of Study
+                  </label>
+                  <input
+                    type="number"
+                    value={formData.yearOfStudy}
+                    onChange={(e) => setFormData({...formData, yearOfStudy: parseInt(e.target.value, 10) || 1})}
+                    className="border border-gray-300 rounded-lg px-3 py-2 w-full text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                    placeholder="Year of Study"
+                  />
+                </div>
+                <div className="w-2/3">
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1">
+                    Branch / Major
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.branch}
+                    onChange={(e) => setFormData({...formData, branch: e.target.value})}
+                    className="border border-gray-300 rounded-lg px-3 py-2 w-full text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                    placeholder="Branch/Major"
+                  />
+                </div>
+              </div>
+              
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1">
+                  Looking For
+                </label>
+                <select
+                  value={formData.lookingFor}
+                  onChange={(e) => setFormData({...formData, lookingFor: e.target.value})}
+                  className="border border-gray-300 rounded-lg px-3 py-2 w-full text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                >
+                  <option value="none">Not looking right now</option>
+                  <option value="project">Looking for Projects</option>
+                  <option value="event">Looking for Events</option>
+                  <option value="both">Both</option>
+                </select>
+              </div>
 
-              <textarea
-                value={formData.bio}
-                onChange={(e) => setFormData({...formData, bio: e.target.value})}
-                className="border border-gray-300 rounded-lg px-3 py-2 w-full text-sm h-20 focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                placeholder="Write a short bio..."
-              />
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1">
+                  Bio
+                </label>
+                <textarea
+                  value={formData.bio}
+                  onChange={(e) => setFormData({...formData, bio: e.target.value})}
+                  className="border border-gray-300 rounded-lg px-3 py-2 w-full text-sm h-20 focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                  placeholder="Write a short bio..."
+                />
+              </div>
               
               <div className="flex items-center gap-2 pt-1 pb-1">
                 <input
@@ -190,13 +309,19 @@ export default function ProfileHeader({ profile, isOwnProfile }: ProfileHeaderPr
               <div className="flex justify-between items-start">
                 <div>
                   <h1 className="text-2xl font-bold text-gray-900">{displayName}</h1>
-                  <p className="text-gray-500 text-sm mt-1">
-                    {profile.college?.name || profile.collegeName || profile.college_name || 'College student'} {profile.city ? `• ${profile.city}` : ''}
-                  </p>
+                  {collegeDisplayName ? (
+                    <div className="flex items-center gap-1.5 text-gray-600 text-sm font-medium mt-1">
+                      <AcademicCapIcon className="h-4 w-4 text-primary-700 flex-shrink-0" />
+                      <span>{collegeDisplayName}</span>
+                      {cityDisplayName && <span className="text-gray-400">({cityDisplayName})</span>}
+                    </div>
+                  ) : (
+                    <p className="text-gray-500 text-sm mt-1">College student</p>
+                  )}
                 </div>
                 {isOwnProfile ? (
                   <button
-                    onClick={() => setIsEditing(true)}
+                    onClick={startEditing}
                     className="bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors"
                   >
                     Edit Profile

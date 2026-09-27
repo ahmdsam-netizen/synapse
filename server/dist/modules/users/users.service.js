@@ -17,7 +17,7 @@ async function recomputeCompleteness(userId) {
     await query(`UPDATE users SET profile_completeness = $1 WHERE id = $2`, [completeness, userId]);
 }
 export async function getProfile(viewerId, targetId) {
-    const userRes = await query(`SELECT u.id, u.name, u.email, u.bio, u.avatar_url, u.year_of_study, u.branch, u.looking_for, u.profile_completeness, COALESCE(u.open_to_invites, TRUE) as open_to_invites, c.name as college_name 
+    const userRes = await query(`SELECT u.id, u.name, u.email, u.bio, u.avatar_url, u.year_of_study, u.branch, u.looking_for, u.profile_completeness, COALESCE(u.open_to_invites, TRUE) as open_to_invites, u.college_id, c.name as college_name, c.city as city 
      FROM users u 
      LEFT JOIN colleges c ON u.college_id = c.id 
      WHERE u.id = $1`, [targetId]);
@@ -58,6 +58,12 @@ export async function getProfile(viewerId, targetId) {
     }
     return {
         ...user,
+        collegeId: user.college_id,
+        college_id: user.college_id,
+        collegeName: user.college_name,
+        college_name: user.college_name,
+        city: user.city,
+        college: user.college_id ? { id: user.college_id, name: user.college_name, city: user.city } : null,
         openToInvites: user.open_to_invites ?? true,
         open_to_invites: user.open_to_invites ?? true,
         skills: skillsRes.rows,
@@ -76,6 +82,13 @@ export async function updateProfile(userId, data) {
     const fields = [];
     const values = [];
     let idx = 1;
+    if (data.collegeId || data.college_id) {
+        data.college_id = data.collegeId || data.college_id;
+    }
+    else if (data.collegeName || data.college_name) {
+        const college = await addCollege(data.collegeName || data.college_name, data.city);
+        data.college_id = college.id;
+    }
     const mapping = {
         name: 'name',
         bio: 'bio',
@@ -84,7 +97,8 @@ export async function updateProfile(userId, data) {
         branch: 'branch',
         lookingFor: 'looking_for',
         openToInvites: 'open_to_invites',
-        open_to_invites: 'open_to_invites'
+        open_to_invites: 'open_to_invites',
+        college_id: 'college_id',
     };
     for (const [key, value] of Object.entries(data)) {
         if (mapping[key] !== undefined && value !== undefined) {
@@ -257,6 +271,40 @@ export async function searchInterests(q) {
        name 
      LIMIT 50`, [queryStr, term, `${term}%`]);
     return res.rows;
+}
+export async function searchColleges(q) {
+    if (!q || !q.trim()) {
+        const res = await query(`SELECT id, name, city, email_domain FROM colleges ORDER BY name ASC LIMIT 100`);
+        return res.rows;
+    }
+    const term = q.trim();
+    const queryStr = `%${term}%`;
+    const res = await query(`SELECT id, name, city, email_domain FROM colleges 
+     WHERE name ILIKE $1 OR city ILIKE $1 
+     ORDER BY 
+       CASE 
+         WHEN LOWER(name) = LOWER($2) THEN 1
+         WHEN LOWER(name) LIKE LOWER($3) THEN 2
+         ELSE 3 
+       END, 
+       name 
+     LIMIT 50`, [queryStr, term, `${term}%`]);
+    return res.rows;
+}
+export async function addCollege(name, city) {
+    const cName = name.trim();
+    const existing = await query(`SELECT id, name, city FROM colleges WHERE name ILIKE $1`, [cName]);
+    if (existing.rows.length) {
+        if (city && city.trim() && !existing.rows[0].city) {
+            await query(`UPDATE colleges SET city = $1 WHERE id = $2`, [city.trim(), existing.rows[0].id]);
+            existing.rows[0].city = city.trim();
+        }
+        return existing.rows[0];
+    }
+    const cleanBase = cName.toLowerCase().replace(/[^a-z0-9]/g, '') || 'college';
+    const domain = `${cleanBase}-${Math.floor(1000 + Math.random() * 9000)}.edu`;
+    const res = await query(`INSERT INTO colleges (name, email_domain, city) VALUES ($1, $2, $3) RETURNING id, name, city`, [cName, domain, city || 'India']);
+    return res.rows[0];
 }
 export async function getAllUsersForEmbedding() {
     const usersRes = await query(`
