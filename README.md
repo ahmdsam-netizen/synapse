@@ -183,7 +183,7 @@ graph TD
   - `chat-service-2`: Port `4002` (Internal instance: `chat-2`)
 - **Role & Operations**:
   - **Stateful Socket Isolation**: Completely decouples stateful, persistent TCP WebSocket connections from stateless HTTP REST traffic in the Core Platform Service.
-  - **Multi-Instance Horizontal Scaling**: Runs multiple instances concurrently. Additional replicas can be added dynamically with zero code changes.
+  - **Single Docker Image, Multi-Container Cluster**: Builds a single unified Docker image (`synapse-chat-service:latest`) from `chat-service/`, which Docker Compose instantiates into two independent runtime containers (`synapse-chat-service-1` and `synapse-chat-service-2`) without duplicating image builds. Additional replicas can be scaled up dynamically.
   - **Cross-Server Synchronization via Redis Pub/Sub**:
     - Connected via `@socket.io/redis-adapter` through `ioredis` publisher and subscriber instances.
     - When a user on `chat-service-1` broadcasts a message to room `group:<id>`, Redis Pub/Sub distributes the packet across the entire cluster so peers connected to `chat-service-2` receive the event in real time.

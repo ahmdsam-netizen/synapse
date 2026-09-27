@@ -1,3 +1,5 @@
+name: synapse
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -51,6 +53,7 @@ services:
     build:
       context: ./server
       dockerfile: Dockerfile
+    image: synapse-core-service:latest
     container_name: synapse-core-service
     ports:
       - '4000:4000'
@@ -78,6 +81,7 @@ services:
     build:
       context: ./recommendation-service
       dockerfile: Dockerfile
+    image: synapse-recommendation-service:latest
     container_name: synapse-recommendation-service
     ports:
       - '5001:5000'
@@ -100,6 +104,7 @@ services:
     build:
       context: ./chat-service
       dockerfile: Dockerfile
+    image: synapse-chat-service:latest
     container_name: synapse-chat-service-1
     ports:
       - '4001:4001'
@@ -122,9 +127,7 @@ services:
     command: npm run dev
 
   chat-service-2:
-    build:
-      context: ./chat-service
-      dockerfile: Dockerfile
+    image: synapse-chat-service:latest
     container_name: synapse-chat-service-2
     ports:
       - '4002:4002'
@@ -137,6 +140,8 @@ services:
       CLIENT_URL: ${CLIENT_URL:-http://localhost:5173}
       NODE_ENV: ${NODE_ENV:-development}
     depends_on:
+      chat-service-1:
+        condition: service_started
       postgres:
         condition: service_healthy
       redis:
@@ -150,6 +155,7 @@ services:
     build:
       context: ./gateway
       dockerfile: Dockerfile
+    image: synapse-gateway:latest
     container_name: synapse-gateway
     ports:
       - '3001:3001'
@@ -171,9 +177,7 @@ services:
     command: npm run dev
 
   worker:
-    build:
-      context: ./server
-      dockerfile: Dockerfile
+    image: synapse-core-service:latest
     container_name: synapse-worker
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgresql://synapse:synapse_dev@postgres:5432/synapse}
@@ -199,6 +203,7 @@ services:
     build:
       context: ./client
       dockerfile: Dockerfile
+    image: synapse-client:latest
     container_name: synapse-client
     ports:
       - '5173:5173'

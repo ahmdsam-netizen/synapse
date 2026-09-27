@@ -7,15 +7,27 @@ from src.config import VECTOR_DATABASE_URL
 
 print(f"[VectorDB] Connecting to independent pgvector instance...")
 
+_extension_initialized = False
+
 def get_connection():
     """Establishes and returns a connection to the dedicated pgvector PostgreSQL instance."""
+    global _extension_initialized
     for attempt in range(10):
         try:
             conn = psycopg2.connect(VECTOR_DATABASE_URL)
             conn.autocommit = True
+            
+            # Bootstrap the vector extension if not yet created before registering vector types
+            if not _extension_initialized:
+                with conn.cursor() as cur:
+                    cur.execute("CREATE EXTENSION IF NOT EXISTS vector;")
+                _extension_initialized = True
+                
             register_vector(conn)
+            conn.autocommit = False
             return conn
         except Exception as e:
+            _extension_initialized = False
             print(f"[VectorDB] Connection attempt {attempt + 1} failed: {e}")
             time.sleep(2)
     raise RuntimeError("Could not connect to independent pgvector database after 10 attempts.")
@@ -26,8 +38,6 @@ def init_vector_database():
     conn = get_connection()
     try:
         with conn.cursor() as cur:
-            # Enable the vector extension on this dedicated database
-            cur.execute("CREATE EXTENSION IF NOT EXISTS vector;")
             
             # User profile embeddings table
             cur.execute("""
