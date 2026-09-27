@@ -1,0 +1,10 @@
+# Dependencies
+node_modules/
+
+# Production Build Output
+dist/
+build/
+
+# Caches and TypeScript build info
+*.tsbuildinfo
+.cache/

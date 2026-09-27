@@ -33,6 +33,14 @@ dist
 **/dist/
 **/dist
 **/dist/**
+client/dist/
+client/dist
+gateway/dist/
+gateway/dist
+server/dist/
+server/dist
+chat-service/dist/
+chat-service/dist
 build/
 build
 */build/
@@ -40,6 +48,10 @@ build
 **/build/
 **/build
 **/build/**
+client/build/
+gateway/build/
+server/build/
+chat-service/build/
 *.tsbuildinfo
 .turbo/
 .cache/
