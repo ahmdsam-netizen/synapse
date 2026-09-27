@@ -14,67 +14,13 @@ id_rsa*
 
 # Dependencies
 node_modules/
-node_modules
-node_module/
-node_module
-*/node_modules/
-*/node_module/
-**/node_modules/
-**/node_modules
-**/node_modules/**
-**/node_module/
-**/node_module/**
 
 # Production Builds & Caches
 dist/
-dist
-*/dist/
-*/dist
-**/dist/
-**/dist
-**/dist/**
-client/dist/
-client/dist
-gateway/dist/
-gateway/dist
-server/dist/
-server/dist
-chat-service/dist/
-chat-service/dist
 build/
-build
-*/build/
-*/build
-**/build/
-**/build
-**/build/**
-client/build/
-gateway/build/
-server/build/
-chat-service/build/
 *.tsbuildinfo
 .turbo/
 .cache/
-
-# Python Virtual Environments & Bytecode (recommendation-service)
-__pycache__/
-__pycache__
-**/__pycache__/
-**/__pycache__
-**/__pycache__/**
-*.py[cod]
-*$py.class
-*.so
-.Python
-env/
-venv/
-.venv/
-**/env/
-**/venv/
-**/.venv/
-ENV/
-*.egg-info/
-.pytest_cache/
 
 # Operating System Files
 .DS_Store
@@ -101,6 +47,5 @@ pnpm-debug.log*
 # Test Coverage
 coverage/
 .nyc_output/
-
 
 AGENTS.md
