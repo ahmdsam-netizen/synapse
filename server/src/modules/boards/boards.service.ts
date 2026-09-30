@@ -1,6 +1,7 @@
-import { query, getClient } from '../../config/database.js';
+import { prisma } from '../../config/prisma.js';
 import { NotFoundError, ForbiddenError, BadRequestError } from '../../utils/errors.js';
 import { decodeCursor, buildPaginationResult } from '../../utils/pagination.js';
+import { schedulePostingExpiration, cancelPostingExpiration } from '../../jobs/maintenance.js';
 
 async function hydrateBoardPostings(rows: any[], viewerUserId?: string) {
   if (!rows || rows.length === 0) return [];
@@ -8,20 +9,26 @@ async function hydrateBoardPostings(rows: any[], viewerUserId?: string) {
   const allSkillIds = new Set<string>();
   const allInterestIds = new Set<string>();
   for (const r of rows) {
-    (r.required_skill_ids || []).forEach((id: string) => allSkillIds.add(id));
-    (r.required_interest_ids || []).forEach((id: string) => allInterestIds.add(id));
+    (r.required_skill_ids || r.requiredSkillIds || []).forEach((id: string) => allSkillIds.add(id));
+    (r.required_interest_ids || r.requiredInterestIds || []).forEach((id: string) => allInterestIds.add(id));
   }
 
   const skillMap = new Map<string, any>();
   if (allSkillIds.size > 0) {
-    const sRes = await query(`SELECT id, name, category FROM skills WHERE id = ANY($1)`, [Array.from(allSkillIds)]);
-    sRes.rows.forEach((s: any) => skillMap.set(s.id, s));
+    const skills = await prisma.skill.findMany({
+      where: { id: { in: Array.from(allSkillIds) } },
+      select: { id: true, name: true, category: true },
+    });
+    skills.forEach((s) => skillMap.set(s.id, s));
   }
 
   const interestMap = new Map<string, any>();
   if (allInterestIds.size > 0) {
-    const iRes = await query(`SELECT id, name, category FROM interests WHERE id = ANY($1)`, [Array.from(allInterestIds)]);
-    iRes.rows.forEach((i: any) => interestMap.set(i.id, i));
+    const interests = await prisma.interest.findMany({
+      where: { id: { in: Array.from(allInterestIds) } },
+      select: { id: true, name: true, category: true },
+    });
+    interests.forEach((i) => interestMap.set(i.id, i));
   }
 
   let viewerSkillIds = new Set<string>();
@@ -29,39 +36,57 @@ async function hydrateBoardPostings(rows: any[], viewerUserId?: string) {
   let requestedPostingIds = new Set<string>();
 
   if (viewerUserId) {
-    const vsRes = await query(`SELECT skill_id FROM user_skills WHERE user_id = $1`, [viewerUserId]);
-    viewerSkillIds = new Set(vsRes.rows.map((r: any) => r.skill_id));
+    const [viewerSkills, viewerInterests] = await Promise.all([
+      prisma.userSkill.findMany({
+        where: { userId: viewerUserId },
+        select: { skillId: true },
+      }),
+      prisma.userInterest.findMany({
+        where: { userId: viewerUserId },
+        select: { interestId: true },
+      }),
+    ]);
+    viewerSkillIds = new Set(viewerSkills.map((s) => s.skillId));
+    viewerInterestIds = new Set(viewerInterests.map((i) => i.interestId));
 
-    const viRes = await query(`SELECT interest_id FROM user_interests WHERE user_id = $1`, [viewerUserId]);
-    viewerInterestIds = new Set(viRes.rows.map((r: any) => r.interest_id));
-
-    const pIds = rows.map((r: any) => r.id);
-    const reqRes = await query(`SELECT posting_id FROM join_requests WHERE user_id = $1 AND posting_id = ANY($2) AND status = 'pending'`, [viewerUserId, pIds]);
-    requestedPostingIds = new Set(reqRes.rows.map((r: any) => r.posting_id));
+    const pIds = rows.map((r) => r.id);
+    const pendingReqs = await prisma.joinRequest.findMany({
+      where: {
+        userId: viewerUserId,
+        postingId: { in: pIds },
+        status: 'pending',
+      },
+      select: { postingId: true },
+    });
+    requestedPostingIds = new Set(pendingReqs.map((pr) => pr.postingId));
   }
 
   return rows.map((r: any) => {
-    const reqSkills = (r.required_skill_ids || []).map((id: string) => skillMap.get(id)).filter(Boolean);
-    const reqInterests = (r.required_interest_ids || []).map((id: string) => interestMap.get(id)).filter(Boolean);
+    const sIds = r.required_skill_ids || r.requiredSkillIds || [];
+    const iIds = r.required_interest_ids || r.requiredInterestIds || [];
+    const reqSkills = sIds.map((id: string) => skillMap.get(id)).filter(Boolean);
+    const reqInterests = iIds.map((id: string) => interestMap.get(id)).filter(Boolean);
     const matchedSkills = reqSkills.filter((s: any) => viewerSkillIds.has(s.id));
     const matchedInterests = reqInterests.filter((i: any) => viewerInterestIds.has(i.id));
 
+    const creatorId = r.creator_id || r.creatorId || r.group?.creatorId;
+
     return {
       id: r.id,
-      groupId: r.group_id,
-      group_id: r.group_id,
-      groupName: r.group_name,
-      group_name: r.group_name,
-      creatorId: r.creator_id,
-      creator_id: r.creator_id,
+      groupId: r.group_id || r.groupId,
+      group_id: r.group_id || r.groupId,
+      groupName: r.group_name || r.group?.name,
+      group_name: r.group_name || r.group?.name,
+      creatorId,
+      creator_id: creatorId,
       title: r.title,
       description: r.description,
-      rolesNeeded: r.roles_needed || [],
-      roles_needed: r.roles_needed || [],
-      requiredSkillIds: r.required_skill_ids || [],
-      required_skill_ids: r.required_skill_ids || [],
-      requiredInterestIds: r.required_interest_ids || [],
-      required_interest_ids: r.required_interest_ids || [],
+      rolesNeeded: r.roles_needed || r.rolesNeeded || [],
+      roles_needed: r.roles_needed || r.rolesNeeded || [],
+      requiredSkillIds: sIds,
+      required_skill_ids: sIds,
+      requiredInterestIds: iIds,
+      required_interest_ids: iIds,
       requiredSkills: reqSkills,
       required_skills: reqSkills,
       requiredInterests: reqInterests,
@@ -70,39 +95,45 @@ async function hydrateBoardPostings(rows: any[], viewerUserId?: string) {
       matched_skills: matchedSkills,
       matchedInterests,
       matched_interests: matchedInterests,
-      slotsTotal: r.slots_total,
-      slots_total: r.slots_total,
-      slotsFilled: r.slots_filled,
-      slots_filled: r.slots_filled,
+      slotsTotal: r.slots_total || r.slotsTotal || 1,
+      slots_total: r.slots_total || r.slotsTotal || 1,
+      slotsFilled: r.slots_filled ?? r.slotsFilled ?? 0,
+      slots_filled: r.slots_filled ?? r.slotsFilled ?? 0,
       community: r.community || 'project',
-      expiresAt: r.expires_at,
-      expires_at: r.expires_at,
+      expiresAt: r.expires_at || r.expiresAt,
+      expires_at: r.expires_at || r.expiresAt,
       status: r.status,
-      createdAt: r.created_at,
-      created_at: r.created_at,
+      createdAt: r.created_at || r.createdAt,
+      created_at: r.created_at || r.createdAt,
       hasRequested: requestedPostingIds.has(r.id),
-      collegeName: r.college_name,
-      college_name: r.college_name,
-      matchPercentage: (!viewerUserId || (r.creator_id !== viewerUserId && r.group_creator_id !== viewerUserId && r.creatorId !== viewerUserId)) && ((r.required_skill_ids || []).length + (r.required_interest_ids || []).length > 0)
-        ? Math.round(((matchedSkills.length + matchedInterests.length) / ((r.required_skill_ids || []).length + (r.required_interest_ids || []).length)) * 100)
-        : undefined,
-      match_percentage: (!viewerUserId || (r.creator_id !== viewerUserId && r.group_creator_id !== viewerUserId && r.creatorId !== viewerUserId)) && ((r.required_skill_ids || []).length + (r.required_interest_ids || []).length > 0)
-        ? Math.round(((matchedSkills.length + matchedInterests.length) / ((r.required_skill_ids || []).length + (r.required_interest_ids || []).length)) * 100)
-        : undefined
+      collegeName: r.college_name || r.group?.college?.name || null,
+      college_name: r.college_name || r.group?.college?.name || null,
+      matchPercentage:
+        (!viewerUserId || (creatorId !== viewerUserId)) && sIds.length + iIds.length > 0
+          ? Math.round(
+              ((matchedSkills.length + matchedInterests.length) /
+                (sIds.length + iIds.length)) *
+                100
+            )
+          : undefined,
+      match_percentage:
+        (!viewerUserId || (creatorId !== viewerUserId)) && sIds.length + iIds.length > 0
+          ? Math.round(
+              ((matchedSkills.length + matchedInterests.length) /
+                (sIds.length + iIds.length)) *
+                100
+            )
+          : undefined,
     };
   });
 }
 
-export const cleanExpiredPostings = async () => {
-  try {
-    await query(`DELETE FROM board_postings WHERE expires_at IS NOT NULL AND expires_at <= NOW()`);
-  } catch (err) {
-    console.error('Error cleaning up expired postings:', err);
-  }
-};
-
-export const getGlobalBoard = async (cursor: string | undefined, limit: number, filters: any, userId?: string) => {
-  await cleanExpiredPostings();
+export const getGlobalBoard = async (
+  cursor: string | undefined,
+  limit: number,
+  filters: any,
+  userId?: string
+) => {
   const { skills, interests, collegeId } = filters;
   const params: any[] = [];
   let paramIndex = 1;
@@ -128,8 +159,13 @@ export const getGlobalBoard = async (cursor: string | undefined, limit: number, 
   }
 
   if (skills && skills.length > 0) {
-    const skillUuids = skills.filter((s: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s));
-    const skillNames = skills.filter((s: string) => !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s));
+    const skillUuids = skills.filter((s: string) =>
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s)
+    );
+    const skillNames = skills.filter(
+      (s: string) =>
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s)
+    );
     if (skillUuids.length > 0) {
       baseQuery += ` AND bp.required_skill_ids && $${paramIndex}::uuid[]`;
       params.push(skillUuids);
@@ -145,8 +181,13 @@ export const getGlobalBoard = async (cursor: string | undefined, limit: number, 
   }
 
   if (interests && interests.length > 0) {
-    const interestUuids = interests.filter((i: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(i));
-    const interestNames = interests.filter((i: string) => !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(i));
+    const interestUuids = interests.filter((i: string) =>
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(i)
+    );
+    const interestNames = interests.filter(
+      (i: string) =>
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(i)
+    );
     if (interestUuids.length > 0) {
       baseQuery += ` AND bp.required_interest_ids && $${paramIndex}::uuid[]`;
       params.push(interestUuids);
@@ -188,15 +229,22 @@ export const getGlobalBoard = async (cursor: string | undefined, limit: number, 
   baseQuery += ` ORDER BY bp.created_at DESC, bp.id DESC LIMIT $${paramIndex}`;
   params.push(limit + 1);
 
-  const { rows } = await query(baseQuery, params);
+  const rows: any[] = await prisma.$queryRawUnsafe(baseQuery, ...params);
 
-  const paginated = buildPaginationResult(rows, limit, (item: any) => ({ createdAt: item.created_at, id: item.id }));
+  const paginated = buildPaginationResult(rows, limit, (item: any) => ({
+    createdAt: item.created_at,
+    id: item.id,
+  }));
   const hydrated = await hydrateBoardPostings(paginated.data, userId);
   return { ...paginated, data: hydrated };
 };
 
-export const getMyPostings = async (userId: string, cursor: string | undefined, limit: number, community?: string) => {
-  await cleanExpiredPostings();
+export const getMyPostings = async (
+  userId: string,
+  cursor: string | undefined,
+  limit: number,
+  community?: string
+) => {
   const params: any[] = [userId];
   let paramIndex = 2;
   let baseQuery = `
@@ -230,9 +278,12 @@ export const getMyPostings = async (userId: string, cursor: string | undefined, 
   baseQuery += ` ORDER BY bp.created_at DESC, bp.id DESC LIMIT $${paramIndex}`;
   params.push(limit + 1);
 
-  const { rows } = await query(baseQuery, params);
+  const rows: any[] = await prisma.$queryRawUnsafe(baseQuery, ...params);
 
-  const paginated = buildPaginationResult(rows, limit, (item: any) => ({ createdAt: item.created_at, id: item.id }));
+  const paginated = buildPaginationResult(rows, limit, (item: any) => ({
+    createdAt: item.created_at,
+    id: item.id,
+  }));
   const hydrated = await hydrateBoardPostings(paginated.data, userId);
   const data = hydrated.map((item, idx) => ({
     ...item,
@@ -255,15 +306,16 @@ async function resolveSkillIds(items: string[]): Promise<string[]> {
     if (isUuid) {
       ids.push(trimmed);
     } else {
-      const existing = await query(`SELECT id FROM skills WHERE LOWER(name) = LOWER($1) LIMIT 1`, [trimmed]);
-      if (existing.rows.length > 0) {
-        ids.push(existing.rows[0].id);
+      const existing = await prisma.skill.findFirst({
+        where: { name: { equals: trimmed, mode: 'insensitive' } },
+      });
+      if (existing) {
+        ids.push(existing.id);
       } else {
-        const inserted = await query(
-          `INSERT INTO skills (name, category) VALUES ($1, 'Other') ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name RETURNING id`,
-          [trimmed]
-        );
-        ids.push(inserted.rows[0].id);
+        const created = await prisma.skill.create({
+          data: { name: trimmed, category: 'Other' },
+        });
+        ids.push(created.id);
       }
     }
   }
@@ -281,15 +333,16 @@ async function resolveInterestIds(items: string[]): Promise<string[]> {
     if (isUuid) {
       ids.push(trimmed);
     } else {
-      const existing = await query(`SELECT id FROM interests WHERE LOWER(name) = LOWER($1) LIMIT 1`, [trimmed]);
-      if (existing.rows.length > 0) {
-        ids.push(existing.rows[0].id);
+      const existing = await prisma.interest.findFirst({
+        where: { name: { equals: trimmed, mode: 'insensitive' } },
+      });
+      if (existing) {
+        ids.push(existing.id);
       } else {
-        const inserted = await query(
-          `INSERT INTO interests (name, category) VALUES ($1, 'Other') ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name RETURNING id`,
-          [trimmed]
-        );
-        ids.push(inserted.rows[0].id);
+        const created = await prisma.interest.create({
+          data: { name: trimmed, category: 'Other' },
+        });
+        ids.push(created.id);
       }
     }
   }
@@ -297,25 +350,27 @@ async function resolveInterestIds(items: string[]): Promise<string[]> {
 }
 
 export const createPosting = async (userId: string, data: any) => {
-  const { rows: groupRows } = await query(
-    `SELECT is_community FROM groups WHERE id = $1`,
-    [data.groupId]
-  );
-  if (groupRows.length && groupRows[0].is_community) {
+  const group = await prisma.group.findUnique({
+    where: { id: data.groupId },
+    select: { isCommunity: true },
+  });
+  if (group && group.isCommunity) {
     throw new BadRequestError('Posters/postings cannot be created for communities.');
   }
 
-  const { rows: roleRows } = await query(
-    `SELECT role FROM group_members WHERE group_id = $1 AND user_id = $2`,
-    [data.groupId, userId]
-  );
-  if (!roleRows.length || roleRows[0].role !== 'admin') {
+  const membership = await prisma.groupMember.findUnique({
+    where: { groupId_userId: { groupId: data.groupId, userId } },
+    select: { role: true },
+  });
+  if (!membership || membership.role !== 'admin') {
     throw new ForbiddenError('Only admins can create postings');
   }
 
-  const expiresInHours = Number(data.expiresInHours) || 72; // default 72 hours (3 days)
+  const expiresInHours = Number(data.expiresInHours) || 72;
   const expiresAt = new Date(Date.now() + expiresInHours * 60 * 60 * 1000);
-  const community = ['project', 'hackathon', 'competition'].includes(data.community) ? data.community : 'project';
+  const community = ['project', 'hackathon', 'competition'].includes(data.community)
+    ? data.community
+    : 'project';
 
   const rawSkills = [
     ...(Array.isArray(data.requiredSkillIds) ? data.requiredSkillIds : []),
@@ -329,232 +384,316 @@ export const createPosting = async (userId: string, data: any) => {
   ];
   const requiredInterestIds = await resolveInterestIds(rawInterests);
 
-  const { rows } = await query(
-    `INSERT INTO board_postings (group_id, title, description, community, roles_needed, required_skill_ids, required_interest_ids, slots_total, expires_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
-    [data.groupId, data.title, data.description, community, data.rolesNeeded || [], requiredSkillIds, requiredInterestIds, 1, expiresAt]
-  );
-  return rows[0];
+  const posting = await prisma.boardPosting.create({
+    data: {
+      groupId: data.groupId,
+      title: data.title,
+      description: data.description,
+      community,
+      rolesNeeded: data.rolesNeeded || [],
+      requiredSkillIds,
+      requiredInterestIds,
+      slotsTotal: 1,
+      expiresAt,
+    },
+  });
+
+  await schedulePostingExpiration(posting.id, expiresAt);
+
+  return posting;
 };
 
 export const updatePosting = async (postingId: string, userId: string, data: any) => {
-  const { rows: postingRows } = await query(`SELECT group_id FROM board_postings WHERE id = $1`, [postingId]);
-  if (!postingRows.length) throw new NotFoundError('Posting not found');
-  const groupId = postingRows[0].group_id;
+  const posting = await prisma.boardPosting.findUnique({
+    where: { id: postingId },
+    select: { groupId: true },
+  });
+  if (!posting) throw new NotFoundError('Posting not found');
 
-  const { rows: roleRows } = await query(`SELECT role FROM group_members WHERE group_id = $1 AND user_id = $2`, [groupId, userId]);
-  if (!roleRows.length || roleRows[0].role !== 'admin') throw new ForbiddenError('Only admins can update postings');
-
-  const updates = [];
-  const params = [];
-  let paramIndex = 1;
-
-  const mapping: Record<string, string> = {
-    title: 'title',
-    description: 'description',
-    community: 'community',
-    rolesNeeded: 'roles_needed',
-    roles_needed: 'roles_needed',
-    requiredSkills: 'required_skills',
-    required_skills: 'required_skills',
-    requiredInterests: 'required_interests',
-    required_interests: 'required_interests',
-    slotsTotal: 'slots_total',
-    slots_total: 'slots_total',
-  };
-
-  for (const [key, value] of Object.entries(data)) {
-    if (value !== undefined) {
-      if (key === 'expiresInHours') {
-        const expiresInHours = Number(value);
-        const expiresAt = new Date(Date.now() + expiresInHours * 60 * 60 * 1000);
-        updates.push(`"expires_at" = $${paramIndex}`);
-        params.push(expiresAt);
-        paramIndex++;
-      } else if (mapping[key] !== undefined) {
-        updates.push(`"${mapping[key]}" = $${paramIndex}`);
-        params.push(value);
-        paramIndex++;
-      }
-    }
+  const membership = await prisma.groupMember.findUnique({
+    where: { groupId_userId: { groupId: posting.groupId, userId } },
+    select: { role: true },
+  });
+  if (!membership || membership.role !== 'admin') {
+    throw new ForbiddenError('Only admins can update postings');
   }
 
-  if (updates.length === 0) return { id: postingId };
-  params.push(postingId);
+  const updateData: Record<string, any> = {};
+  if (data.title !== undefined) updateData.title = data.title;
+  if (data.description !== undefined) updateData.description = data.description;
+  if (data.community !== undefined) updateData.community = data.community;
+  if (data.rolesNeeded !== undefined || data.roles_needed !== undefined) {
+    updateData.rolesNeeded = data.rolesNeeded || data.roles_needed;
+  }
+  if (data.slotsTotal !== undefined || data.slots_total !== undefined) {
+    updateData.slotsTotal = Number(data.slotsTotal ?? data.slots_total);
+  }
+  if (data.expiresInHours !== undefined) {
+    updateData.expiresAt = new Date(Date.now() + Number(data.expiresInHours) * 60 * 60 * 1000);
+  }
 
-  const { rows } = await query(
-    `UPDATE board_postings SET ${updates.join(', ')} WHERE id = $${paramIndex} RETURNING *`,
-    params
-  );
-  return rows[0];
+  const updated = await prisma.boardPosting.update({
+    where: { id: postingId },
+    data: updateData,
+  });
+
+  if (updateData.expiresAt) {
+    await schedulePostingExpiration(postingId, updateData.expiresAt);
+  }
+
+  return updated;
 };
 
 export const closePosting = async (postingId: string, userId: string) => {
-  const { rows: postingRows } = await query(`SELECT group_id FROM board_postings WHERE id = $1`, [postingId]);
-  if (!postingRows.length) throw new NotFoundError('Posting not found');
-  const groupId = postingRows[0].group_id;
+  const posting = await prisma.boardPosting.findUnique({
+    where: { id: postingId },
+    select: { groupId: true },
+  });
+  if (!posting) throw new NotFoundError('Posting not found');
 
-  const { rows: roleRows } = await query(`SELECT role FROM group_members WHERE group_id = $1 AND user_id = $2`, [groupId, userId]);
-  if (!roleRows.length || roleRows[0].role !== 'admin') throw new ForbiddenError('Only admins can close postings');
+  const membership = await prisma.groupMember.findUnique({
+    where: { groupId_userId: { groupId: posting.groupId, userId } },
+    select: { role: true },
+  });
+  if (!membership || membership.role !== 'admin') {
+    throw new ForbiddenError('Only admins can close postings');
+  }
 
-  await query(`UPDATE board_postings SET status = 'closed' WHERE id = $1`, [postingId]);
+  await prisma.boardPosting.update({
+    where: { id: postingId },
+    data: { status: 'closed' },
+  });
+
+  cancelPostingExpiration(postingId).catch(() => {});
+
   return { success: true };
 };
 
 export const deletePosting = async (postingId: string, userId: string) => {
-  const { rows: postingRows } = await query(
-    `SELECT bp.group_id, g.creator_id 
-     FROM board_postings bp 
-     JOIN groups g ON g.id = bp.group_id 
-     WHERE bp.id = $1`,
-    [postingId]
-  );
-  if (!postingRows.length) throw new NotFoundError('Posting not found');
-  const { group_id: groupId, creator_id: creatorId } = postingRows[0];
+  const posting = await prisma.boardPosting.findUnique({
+    where: { id: postingId },
+    include: { group: { select: { creatorId: true } } },
+  });
+  if (!posting) throw new NotFoundError('Posting not found');
 
-  const { rows: roleRows } = await query(
-    `SELECT role FROM group_members WHERE group_id = $1 AND user_id = $2`,
-    [groupId, userId]
-  );
-  const isAdmin = roleRows.length && roleRows[0].role === 'admin';
-  const isCreator = creatorId === userId;
+  const membership = await prisma.groupMember.findUnique({
+    where: { groupId_userId: { groupId: posting.groupId, userId } },
+    select: { role: true },
+  });
+
+  const isAdmin = membership && membership.role === 'admin';
+  const isCreator = posting.group.creatorId === userId;
 
   if (!isAdmin && !isCreator) {
     throw new ForbiddenError('Only group admins can delete this posting');
   }
 
-  await query(`DELETE FROM board_postings WHERE id = $1`, [postingId]);
+  await prisma.boardPosting.delete({
+    where: { id: postingId },
+  });
+
+  cancelPostingExpiration(postingId).catch(() => {});
+
   return { success: true, message: 'Posting deleted successfully' };
 };
 
 export const getPosting = async (postingId: string) => {
-  await cleanExpiredPostings();
-  const { rows } = await query(
-    `SELECT bp.*, g.name as group_name 
-     FROM board_postings bp 
-     JOIN groups g ON g.id = bp.group_id 
-     WHERE bp.id = $1 AND (bp.expires_at IS NULL OR bp.expires_at > NOW())`, 
-    [postingId]
-  );
-  if (!rows.length) throw new NotFoundError('Posting not found');
-  return rows[0];
+  const posting = await prisma.boardPosting.findFirst({
+    where: {
+      id: postingId,
+      OR: [
+        { expiresAt: null },
+        { expiresAt: { gt: new Date() } },
+      ],
+    },
+    include: { group: { select: { name: true } } },
+  });
+
+  if (!posting) throw new NotFoundError('Posting not found');
+  return {
+    ...posting,
+    group_name: posting.group.name,
+  };
 };
 
-export const submitJoinRequest = async (userId: string, postingId: string, message: string = '') => {
-  await cleanExpiredPostings();
-  const { rows: postingRows } = await query(
-    `SELECT group_id, status, expires_at FROM board_postings WHERE id = $1`, 
-    [postingId]
-  );
-  if (!postingRows.length) throw new NotFoundError('Posting not found');
-  if (postingRows[0].status !== 'open') throw new BadRequestError('Posting is not open');
-  if (postingRows[0].expires_at && new Date(postingRows[0].expires_at) <= new Date()) {
+export const submitJoinRequest = async (
+  userId: string,
+  postingId: string,
+  message: string = ''
+) => {
+  const posting = await prisma.boardPosting.findUnique({
+    where: { id: postingId },
+    select: { groupId: true, status: true, expiresAt: true },
+  });
+
+  if (!posting) throw new NotFoundError('Posting not found');
+  if (posting.status !== 'open') throw new BadRequestError('Posting is not open');
+  if (posting.expiresAt && posting.expiresAt <= new Date()) {
     throw new BadRequestError('This posting has expired');
   }
 
-  const groupId = postingRows[0].group_id;
+  const groupId = posting.groupId;
 
-  const { rows: memberRows } = await query(`SELECT 1 FROM group_members WHERE group_id = $1 AND user_id = $2`, [groupId, userId]);
-  if (memberRows.length) throw new BadRequestError('You are already a member of this group');
+  const isMember = await prisma.groupMember.findUnique({
+    where: { groupId_userId: { groupId, userId } },
+  });
+  if (isMember) throw new BadRequestError('You are already a member of this group');
 
-  const { rows: existingRequest } = await query(`SELECT 1 FROM join_requests WHERE posting_id = $1 AND user_id = $2 AND status = 'pending'`, [postingId, userId]);
-  if (existingRequest.length) throw new BadRequestError('You already have a pending request for this posting');
+  const existingRequest = await prisma.joinRequest.findUnique({
+    where: { postingId_userId: { postingId, userId } },
+  });
+  if (existingRequest && existingRequest.status === 'pending') {
+    throw new BadRequestError('You already have a pending request for this posting');
+  }
 
-  const { rows } = await query(
-    `INSERT INTO join_requests (group_id, posting_id, user_id, message) VALUES ($1, $2, $3, $4) RETURNING *`,
-    [groupId, postingId, userId, message]
-  );
-  return rows[0];
+  return prisma.joinRequest.create({
+    data: {
+      groupId,
+      postingId,
+      userId,
+      message,
+    },
+  });
 };
 
 export const getGroupRequests = async (groupId: string, userId: string, status: string) => {
-  const { rows: roleRows } = await query(`SELECT role FROM group_members WHERE group_id = $1 AND user_id = $2`, [groupId, userId]);
-  if (!roleRows.length || roleRows[0].role !== 'admin') throw new ForbiddenError('Only admins can view requests');
+  const membership = await prisma.groupMember.findUnique({
+    where: { groupId_userId: { groupId, userId } },
+    select: { role: true },
+  });
+  if (!membership || membership.role !== 'admin') {
+    throw new ForbiddenError('Only admins can view requests');
+  }
 
-  const { rows } = await query(
-    `SELECT jr.*, u.name, u.avatar_url, bp.title as posting_title
-     FROM join_requests jr
-     JOIN users u ON u.id = jr.user_id
-     JOIN board_postings bp ON bp.id = jr.posting_id
-     WHERE jr.group_id = $1 AND jr.status = $2
-     ORDER BY jr.created_at DESC`,
-    [groupId, status]
-  );
-  return rows;
+  const requests = await prisma.joinRequest.findMany({
+    where: { groupId, status },
+    include: {
+      user: { select: { name: true, avatarUrl: true } },
+      posting: { select: { title: true } },
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  return requests.map((jr) => ({
+    id: jr.id,
+    posting_id: jr.postingId,
+    group_id: jr.groupId,
+    user_id: jr.userId,
+    message: jr.message,
+    status: jr.status,
+    reviewed_by: jr.reviewedBy,
+    created_at: jr.createdAt,
+    reviewed_at: jr.reviewedAt,
+    name: jr.user.name,
+    avatar_url: jr.user.avatarUrl,
+    posting_title: jr.posting.title,
+  }));
 };
 
 export const approveRequest = async (requestId: string, adminId: string) => {
-  const client = await getClient();
-  try {
-    await client.query('BEGIN');
-
-    const { rows: reqRows } = await client.query(`SELECT * FROM join_requests WHERE id = $1 FOR UPDATE`, [requestId]);
-    if (!reqRows.length) throw new NotFoundError('Request not found');
-    const request = reqRows[0];
+  return prisma.$transaction(async (tx) => {
+    const request = await tx.joinRequest.findUnique({
+      where: { id: requestId },
+    });
+    if (!request) throw new NotFoundError('Request not found');
     if (request.status !== 'pending') throw new BadRequestError('Request is not pending');
 
-    const { rows: roleRows } = await client.query(`SELECT role FROM group_members WHERE group_id = $1 AND user_id = $2`, [request.group_id, adminId]);
-    if (!roleRows.length || roleRows[0].role !== 'admin') throw new ForbiddenError('Only admins can approve requests');
-
-    await client.query(
-      `UPDATE join_requests SET status = 'approved', reviewed_by = $1, reviewed_at = NOW() WHERE id = $2`,
-      [adminId, requestId]
-    );
-
-    await client.query(
-      `INSERT INTO group_members (group_id, user_id, role) VALUES ($1, $2, 'member') ON CONFLICT DO NOTHING`,
-      [request.group_id, request.user_id]
-    );
-
-    if (request.posting_id) {
-      // Close posting so it leaves active boards without deleting join_requests
-      await client.query(
-        `UPDATE board_postings SET status = 'closed', slots_filled = slots_total WHERE id = $1`,
-        [request.posting_id]
-      );
+    const membership = await tx.groupMember.findUnique({
+      where: { groupId_userId: { groupId: request.groupId, userId: adminId } },
+      select: { role: true },
+    });
+    if (!membership || membership.role !== 'admin') {
+      throw new ForbiddenError('Only admins can approve requests');
     }
 
-    await client.query('COMMIT');
+    await tx.joinRequest.update({
+      where: { id: requestId },
+      data: {
+        status: 'approved',
+        reviewedBy: adminId,
+        reviewedAt: new Date(),
+      },
+    });
+
+    await tx.groupMember.upsert({
+      where: { groupId_userId: { groupId: request.groupId, userId: request.userId } },
+      update: {},
+      create: {
+        groupId: request.groupId,
+        userId: request.userId,
+        role: 'member',
+      },
+    });
+
+    if (request.postingId) {
+      await tx.boardPosting.update({
+        where: { id: request.postingId },
+        data: {
+          status: 'closed',
+          slotsFilled: { increment: 1 },
+        },
+      });
+    }
+
     return { success: true };
-  } catch (err) {
-    await client.query('ROLLBACK');
-    throw err;
-  } finally {
-    client.release();
-  }
+  });
 };
 
 export const rejectRequest = async (requestId: string, adminId: string) => {
-  const { rows: reqRows } = await query(`SELECT * FROM join_requests WHERE id = $1`, [requestId]);
-  if (!reqRows.length) throw new NotFoundError('Request not found');
-  const request = reqRows[0];
+  const request = await prisma.joinRequest.findUnique({
+    where: { id: requestId },
+    select: { groupId: true, status: true },
+  });
+  if (!request) throw new NotFoundError('Request not found');
   if (request.status !== 'pending') throw new BadRequestError('Request is not pending');
 
-  const { rows: roleRows } = await query(`SELECT role FROM group_members WHERE group_id = $1 AND user_id = $2`, [request.group_id, adminId]);
-  if (!roleRows.length || roleRows[0].role !== 'admin') throw new ForbiddenError('Only admins can reject requests');
+  const membership = await prisma.groupMember.findUnique({
+    where: { groupId_userId: { groupId: request.groupId, userId: adminId } },
+    select: { role: true },
+  });
+  if (!membership || membership.role !== 'admin') {
+    throw new ForbiddenError('Only admins can reject requests');
+  }
 
-  await query(
-    `UPDATE join_requests SET status = 'rejected', reviewed_by = $1, reviewed_at = NOW() WHERE id = $2`,
-    [adminId, requestId]
-  );
+  await prisma.joinRequest.update({
+    where: { id: requestId },
+    data: {
+      status: 'rejected',
+      reviewedBy: adminId,
+      reviewedAt: new Date(),
+    },
+  });
+
   return { success: true };
 };
 
 export const getMyRequests = async (userId: string) => {
-  const { rows } = await query(
-    `SELECT jr.*, bp.title as posting_title, g.name as group_name
-     FROM join_requests jr
-     LEFT JOIN board_postings bp ON bp.id = jr.posting_id
-     JOIN groups g ON g.id = jr.group_id
-     WHERE jr.user_id = $1
-     ORDER BY (jr.status = 'pending') DESC, jr.created_at DESC`,
-    [userId]
-  );
-  return rows;
+  const requests = await prisma.joinRequest.findMany({
+    where: { userId },
+    include: {
+      posting: { select: { title: true } },
+      group: { select: { name: true } },
+    },
+    orderBy: [{ status: 'desc' }, { createdAt: 'desc' }],
+  });
+
+  return requests.map((jr) => ({
+    id: jr.id,
+    posting_id: jr.postingId,
+    group_id: jr.groupId,
+    user_id: jr.userId,
+    message: jr.message,
+    status: jr.status,
+    reviewed_by: jr.reviewedBy,
+    created_at: jr.createdAt,
+    reviewed_at: jr.reviewedAt,
+    posting_title: jr.posting?.title || null,
+    group_name: jr.group.name,
+  }));
 };
 
 export const getAllBoardsForEmbedding = async () => {
-  const { rows } = await query(`
+  const rows: any[] = await prisma.$queryRaw`
     SELECT bp.id, bp.group_id, g.creator_id, bp.title, bp.description, bp.roles_needed,
            bp.slots_total, bp.slots_filled, bp.expires_at, bp.required_skill_ids, bp.required_interest_ids,
            g.name as group_name
@@ -562,19 +701,19 @@ export const getAllBoardsForEmbedding = async () => {
     LEFT JOIN groups g ON bp.group_id = g.id
     WHERE (bp.expires_at IS NULL OR bp.expires_at > NOW())
       AND bp.slots_filled < bp.slots_total
-  `);
+  `;
   return hydrateBoardPostings(rows);
 };
 
 export const getBoardForEmbedding = async (postingId: string) => {
-  const { rows } = await query(`
+  const rows: any[] = await prisma.$queryRaw`
     SELECT bp.id, bp.group_id, g.creator_id, bp.title, bp.description, bp.roles_needed,
            bp.slots_total, bp.slots_filled, bp.expires_at, bp.required_skill_ids, bp.required_interest_ids,
            g.name as group_name
     FROM board_postings bp
     LEFT JOIN groups g ON bp.group_id = g.id
-    WHERE bp.id = $1
-  `, [postingId]);
+    WHERE bp.id = ${postingId}::uuid
+  `;
   const hydrated = await hydrateBoardPostings(rows);
   return hydrated[0] || null;
 };

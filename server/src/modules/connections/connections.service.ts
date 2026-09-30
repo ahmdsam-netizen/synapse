@@ -1,4 +1,4 @@
-import { pool, query, getClient } from '../../config/database.js';
+import { prisma } from '../../config/prisma.js';
 import { NotFoundError, ValidationError, ConflictError } from '../../utils/errors.js';
 import { decodeCursor, buildPaginationResult, PaginationResult } from '../../utils/pagination.js';
 
@@ -8,153 +8,170 @@ export async function sendRequest(requesterId: string, receiverId: string) {
   }
 
   // Check if receiver exists
-  const receiverRes = await query('SELECT id FROM users WHERE id = $1', [receiverId]);
-  if (receiverRes.rows.length === 0) {
+  const receiver = await prisma.user.findUnique({
+    where: { id: receiverId },
+    select: { id: true },
+  });
+  if (!receiver) {
     throw new NotFoundError('User not found');
   }
 
   // Check if blocked
-  const blockRes = await query(
-    `SELECT 1 FROM user_blocks 
-     WHERE (blocker_id = $1 AND blocked_id = $2) 
-        OR (blocker_id = $2 AND blocked_id = $1)`,
-    [requesterId, receiverId]
-  );
-  if (blockRes.rows.length > 0) {
+  const block = await prisma.userBlock.findFirst({
+    where: {
+      OR: [
+        { blockerId: requesterId, blockedId: receiverId },
+        { blockerId: receiverId, blockedId: requesterId },
+      ],
+    },
+  });
+  if (block) {
     throw new ConflictError('Cannot send request due to block');
   }
 
   // Check existing connection
-  const connRes = await query(
-    `SELECT status FROM connections 
-     WHERE (requester_id = $1 AND receiver_id = $2) 
-        OR (requester_id = $2 AND receiver_id = $1)`,
-    [requesterId, receiverId]
-  );
+  const existing = await prisma.connection.findFirst({
+    where: {
+      OR: [
+        { requesterId, receiverId },
+        { requesterId: receiverId, receiverId: requesterId },
+      ],
+    },
+  });
 
-  if (connRes.rows.length > 0) {
-    const status = connRes.rows[0].status;
-    if (status === 'pending') {
+  if (existing) {
+    if (existing.status === 'pending') {
       throw new ConflictError('Connection request already pending');
-    } else if (status === 'accepted') {
+    } else if (existing.status === 'accepted') {
       throw new ConflictError('Already connected');
     }
   }
 
-  const insertRes = await query(
-    `INSERT INTO connections (requester_id, receiver_id, status) 
-     VALUES ($1, $2, 'pending') RETURNING *`,
-    [requesterId, receiverId]
-  );
-
-  return insertRes.rows[0];
+  return prisma.connection.create({
+    data: {
+      requesterId,
+      receiverId,
+      status: 'pending',
+    },
+  });
 }
 
 export async function acceptConnection(connectionId: string, userId: string) {
-  const connRes = await query(
-    `SELECT * FROM connections WHERE id = $1 AND receiver_id = $2 AND status = 'pending'`,
-    [connectionId, userId]
-  );
+  const conn = await prisma.connection.findFirst({
+    where: {
+      id: connectionId,
+      receiverId: userId,
+      status: 'pending',
+    },
+  });
 
-  if (connRes.rows.length === 0) {
+  if (!conn) {
     throw new NotFoundError('Connection request not found or not in pending state');
   }
 
-  const conn = connRes.rows[0];
-  const requesterId = conn.requester_id;
-  const client = await getClient();
+  const requesterId = conn.requesterId;
 
-  try {
-    await client.query('BEGIN');
+  // Use a transaction to update connection status and insert symmetric graph edges
+  return prisma.$transaction(async (tx) => {
+    const updated = await tx.connection.update({
+      where: { id: connectionId },
+      data: {
+        status: 'accepted',
+        updatedAt: new Date(),
+      },
+    });
 
-    const updateRes = await client.query(
-      `UPDATE connections SET status = 'accepted', updated_at = NOW() WHERE id = $1 RETURNING *`,
-      [connectionId]
-    );
+    await tx.connectionEdge.upsert({
+      where: { userId_friendId: { userId: requesterId, friendId: userId } },
+      update: { connectedAt: new Date() },
+      create: { userId: requesterId, friendId: userId },
+    });
 
-    await client.query(
-      `INSERT INTO connection_edges (user_id, friend_id, connected_at) 
-       VALUES ($1, $2, NOW()), ($2, $1, NOW())
-       ON CONFLICT (user_id, friend_id) DO UPDATE SET connected_at = NOW()`,
-      [requesterId, userId]
-    );
+    await tx.connectionEdge.upsert({
+      where: { userId_friendId: { userId, friendId: requesterId } },
+      update: { connectedAt: new Date() },
+      create: { userId, friendId: requesterId },
+    });
 
-    await client.query('COMMIT');
-
-    return updateRes.rows[0];
-  } catch (error) {
-    await client.query('ROLLBACK');
-    throw error;
-  } finally {
-    client.release();
-  }
+    return updated;
+  });
 }
 
 export async function declineConnection(connectionId: string, userId: string) {
-  const res = await query(
-    `UPDATE connections 
-     SET status = 'declined', updated_at = NOW() 
-     WHERE id = $1 AND receiver_id = $2 AND status = 'pending' 
-     RETURNING *`,
-    [connectionId, userId]
-  );
+  const conn = await prisma.connection.findFirst({
+    where: {
+      id: connectionId,
+      receiverId: userId,
+      status: 'pending',
+    },
+  });
 
-  if (res.rows.length === 0) {
+  if (!conn) {
     throw new NotFoundError('Connection request not found or not in pending state');
   }
 
-  return res.rows[0];
+  return prisma.connection.update({
+    where: { id: connectionId },
+    data: {
+      status: 'declined',
+      updatedAt: new Date(),
+    },
+  });
 }
 
 export async function removeConnection(connectionIdOrFriendId: string, userId: string) {
-  const connRes = await query(
-    `SELECT * FROM connections
-     WHERE (status = 'accepted' OR status = 'pending')
-       AND (requester_id = $2 OR receiver_id = $2)
-       AND (
-         id = $1
-         OR (requester_id = $1 AND receiver_id = $2)
-         OR (receiver_id = $1 AND requester_id = $2)
-       )
-     LIMIT 1`,
-    [connectionIdOrFriendId, userId]
-  );
+  const conn = await prisma.connection.findFirst({
+    where: {
+      AND: [
+        {
+          OR: [
+            { status: 'accepted' },
+            { status: 'pending' },
+          ],
+        },
+        {
+          OR: [
+            { id: connectionIdOrFriendId },
+            { requesterId: connectionIdOrFriendId, receiverId: userId },
+            { receiverId: connectionIdOrFriendId, requesterId: userId },
+          ],
+        },
+      ],
+    },
+  });
 
-  if (connRes.rows.length === 0) {
+  if (!conn) {
     throw new NotFoundError('Connection not found');
   }
 
-  const conn = connRes.rows[0];
-  const requesterId = conn.requester_id;
-  const receiverId = conn.receiver_id;
-  const client = await getClient();
+  const requesterId = conn.requesterId;
+  const receiverId = conn.receiverId;
 
-  try {
-    await client.query('BEGIN');
-
-    await client.query('DELETE FROM connections WHERE id = $1', [conn.id]);
+  return prisma.$transaction(async (tx) => {
+    await tx.connection.delete({
+      where: { id: conn.id },
+    });
 
     if (conn.status === 'accepted') {
-      await client.query(
-        `DELETE FROM connection_edges 
-         WHERE (user_id = $1 AND friend_id = $2) 
-            OR (user_id = $2 AND friend_id = $1)`,
-        [requesterId, receiverId]
-      );
+      await tx.connectionEdge.deleteMany({
+        where: {
+          OR: [
+            { userId: requesterId, friendId: receiverId },
+            { userId: receiverId, friendId: requesterId },
+          ],
+        },
+      });
     }
 
-    await client.query('COMMIT');
-
     return { removed: true };
-  } catch (error) {
-    await client.query('ROLLBACK');
-    throw error;
-  } finally {
-    client.release();
-  }
+  });
 }
 
-export async function listConnections(userId: string, cursor: string | null, limit: number): Promise<PaginationResult<any>> {
+export async function listConnections(
+  userId: string,
+  cursor: string | null,
+  limit: number
+): Promise<PaginationResult<any>> {
   let queryText = `
     SELECT ce.friend_id, ce.connected_at, conn.id AS connection_id,
            u.id, u.name, u.avatar_url, u.bio, u.college_id, u.year_of_study, u.branch, u.looking_for,
@@ -180,29 +197,33 @@ export async function listConnections(userId: string, cursor: string | null, lim
   queryText += ` ORDER BY ce.connected_at DESC, ce.friend_id DESC LIMIT $${params.length + 1}`;
   params.push(limit + 1);
 
-  const res = await query(queryText, params);
+  const rows: any[] = await prisma.$queryRawUnsafe(queryText, ...params);
 
-  const pagination = buildPaginationResult(res.rows, limit, (row) => ({
+  const pagination = buildPaginationResult(rows, limit, (row) => ({
     connectedAt: row.connected_at,
     friendId: row.friend_id,
   }));
 
-  const friendIds = pagination.data.map(r => r.friend_id);
+  const friendIds = pagination.data.map((r) => r.friend_id);
   const skillsMap = new Map<string, any[]>();
+
   if (friendIds.length > 0) {
-    const skillsRes = await query(
-      `SELECT us.user_id, s.id, s.name, s.category, us.proficiency 
-       FROM user_skills us JOIN skills s ON s.id = us.skill_id 
-       WHERE us.user_id = ANY($1)`,
-      [friendIds]
-    );
-    for (const row of skillsRes.rows) {
-      if (!skillsMap.has(row.user_id)) skillsMap.set(row.user_id, []);
-      skillsMap.get(row.user_id)!.push(row);
+    const skillsRes = await prisma.userSkill.findMany({
+      where: { userId: { in: friendIds } },
+      include: { skill: true },
+    });
+    for (const row of skillsRes) {
+      if (!skillsMap.has(row.userId)) skillsMap.set(row.userId, []);
+      skillsMap.get(row.userId)!.push({
+        id: row.skill.id,
+        name: row.skill.name,
+        category: row.skill.category,
+        proficiency: row.proficiency,
+      });
     }
   }
 
-  const hydratedData = pagination.data.map(r => ({
+  const hydratedData = pagination.data.map((r) => ({
     id: r.id,
     friendId: r.friend_id,
     connectionId: r.connection_id,
@@ -220,53 +241,66 @@ export async function listConnections(userId: string, cursor: string | null, lim
     lookingFor: r.looking_for,
     connectedAt: r.connected_at,
     connected_at: r.connected_at,
-    skills: skillsMap.get(r.id) || []
+    skills: skillsMap.get(r.id) || [],
   }));
 
   return {
     ...pagination,
-    data: hydratedData
+    data: hydratedData,
   };
 }
 
 export async function listPending(userId: string) {
-  const res = await query(
-    `SELECT c.id, c.requester_id, c.receiver_id, c.status, c.created_at,
-            CASE WHEN c.receiver_id = $1 THEN 'received' ELSE 'sent' END as direction,
-            u.id as user_id, u.name, u.avatar_url, u.bio, u.college_id, u.year_of_study, u.branch,
-            col.name as college_name
-     FROM connections c
-     JOIN users u ON u.id = (CASE WHEN c.receiver_id = $1 THEN c.requester_id ELSE c.receiver_id END)
-     LEFT JOIN colleges col ON col.id = u.college_id
-     WHERE (c.receiver_id = $1 OR c.requester_id = $1) AND c.status IN ('pending', 'accepted')
-     ORDER BY (c.status = 'pending') DESC, c.created_at DESC`,
-    [userId]
-  );
-  return res.rows.map(r => ({
-    id: r.id,
-    requesterId: r.requester_id,
-    requester_id: r.requester_id,
-    receiverId: r.receiver_id,
-    receiver_id: r.receiver_id,
-    direction: r.direction,
-    status: r.status === 'accepted' ? 'approved' : r.status,
-    createdAt: r.created_at,
-    created_at: r.created_at,
-    userId: r.user_id,
-    name: r.name,
-    avatarUrl: r.avatar_url,
-    avatar_url: r.avatar_url,
-    bio: r.bio,
-    collegeId: r.college_id,
-    collegeName: r.college_name,
-    college_name: r.college_name,
-    yearOfStudy: r.year_of_study,
-    year_of_study: r.year_of_study,
-    branch: r.branch
-  }));
+  const connections = await prisma.connection.findMany({
+    where: {
+      OR: [{ receiverId: userId }, { requesterId: userId }],
+      status: { in: ['pending', 'accepted'] },
+    },
+    include: {
+      requester: {
+        include: { college: true },
+      },
+      receiver: {
+        include: { college: true },
+      },
+    },
+    orderBy: [{ status: 'desc' }, { createdAt: 'desc' }],
+  });
+
+  return connections.map((c) => {
+    const isReceiver = c.receiverId === userId;
+    const targetUser = isReceiver ? c.requester : c.receiver;
+    return {
+      id: c.id,
+      requesterId: c.requesterId,
+      requester_id: c.requesterId,
+      receiverId: c.receiverId,
+      receiver_id: c.receiverId,
+      direction: isReceiver ? 'received' : 'sent',
+      status: c.status === 'accepted' ? 'approved' : c.status,
+      createdAt: c.createdAt,
+      created_at: c.createdAt,
+      userId: targetUser.id,
+      name: targetUser.name,
+      avatarUrl: targetUser.avatarUrl,
+      avatar_url: targetUser.avatarUrl,
+      bio: targetUser.bio,
+      collegeId: targetUser.collegeId,
+      collegeName: targetUser.college?.name || null,
+      college_name: targetUser.college?.name || null,
+      yearOfStudy: targetUser.yearOfStudy,
+      year_of_study: targetUser.yearOfStudy,
+      branch: targetUser.branch,
+    };
+  });
 }
 
-export async function getMutualConnections(userId: string, otherUserId: string, cursor: string | null, limit: number): Promise<PaginationResult<any>> {
+export async function getMutualConnections(
+  userId: string,
+  otherUserId: string,
+  cursor: string | null,
+  limit: number
+): Promise<PaginationResult<any>> {
   let queryText = `
     SELECT u.id, u.name, u.avatar_url, u.college_id, col.name as college_name
     FROM connection_edges e1
@@ -288,29 +322,39 @@ export async function getMutualConnections(userId: string, otherUserId: string, 
   queryText += ` ORDER BY u.id ASC LIMIT $${params.length + 1}`;
   params.push(limit + 1);
 
-  const res = await query(queryText, params);
+  const rows: any[] = await prisma.$queryRawUnsafe(queryText, ...params);
 
-  return buildPaginationResult(res.rows, limit, (row) => ({
+  return buildPaginationResult(rows, limit, (row) => ({
     id: row.id,
   }));
 }
 
 export async function getConnectedUserIds(userId: string): Promise<string[]> {
-  const res = await query(`
-    SELECT receiver_id as friend_id FROM connections WHERE requester_id = $1 AND status = 'accepted'
-    UNION
-    SELECT requester_id as friend_id FROM connections WHERE receiver_id = $1 AND status = 'accepted'
-  `, [userId]);
-  return res.rows.map((r: any) => r.friend_id);
+  const edges = await prisma.connectionEdge.findMany({
+    where: { userId },
+    select: { friendId: true },
+  });
+  return edges.map((e) => e.friendId);
 }
 
-export async function getSecondDegreeCandidates(userId: string, limit: number = 60, offset: number = 0): Promise<Array<{
-  candidate_id: string;
-  mutual_count: number;
-  via_connection_id: string;
-  via_connection_name: string;
-}>> {
-  const res = await query(`
+export async function getSecondDegreeCandidates(
+  userId: string,
+  limit: number = 60,
+  offset: number = 0
+): Promise<
+  Array<{
+    candidate_id: string;
+    mutual_count: number;
+    via_connection_id: string;
+    via_connection_name: string;
+  }>
+> {
+  const rows: Array<{
+    candidate_id: string;
+    mutual_count: number;
+    via_connection_id: string;
+    via_connection_name: string;
+  }> = await prisma.$queryRaw`
     SELECT 
       ce2.friend_id AS candidate_id, 
       count(distinct ce1.friend_id)::int AS mutual_count,
@@ -318,22 +362,21 @@ export async function getSecondDegreeCandidates(userId: string, limit: number = 
       COALESCE((SELECT name FROM users WHERE id = min(ce1.friend_id::text)::uuid), 'A mutual connection') AS via_connection_name
     FROM connection_edges ce1
     JOIN connection_edges ce2 ON ce1.friend_id = ce2.user_id
-    WHERE ce1.user_id = $1
-      AND ce2.friend_id != $1
+    WHERE ce1.user_id = ${userId}::uuid
+      AND ce2.friend_id != ${userId}::uuid
       AND NOT EXISTS (
         SELECT 1 FROM connection_edges direct 
-        WHERE direct.user_id = $1 
+        WHERE direct.user_id = ${userId}::uuid 
           AND direct.friend_id = ce2.friend_id
       )
       AND NOT EXISTS (
         SELECT 1 FROM user_blocks ub
-        WHERE (ub.blocker_id = $1 AND ub.blocked_id = ce2.friend_id)
-           OR (ub.blocker_id = ce2.friend_id AND ub.blocked_id = $1)
+        WHERE (ub.blocker_id = ${userId}::uuid AND ub.blocked_id = ce2.friend_id)
+           OR (ub.blocker_id = ce2.friend_id AND ub.blocked_id = ${userId}::uuid)
       )
     GROUP BY ce2.friend_id
     ORDER BY mutual_count DESC, ce2.friend_id ASC
-    LIMIT $2 OFFSET $3;
-  `, [userId, limit, offset]);
-  return res.rows;
+    LIMIT ${limit} OFFSET ${offset};
+  `;
+  return rows;
 }
-

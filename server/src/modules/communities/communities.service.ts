@@ -1,26 +1,31 @@
-import { query, getClient } from '../../config/database.js';
+import { prisma } from '../../config/prisma.js';
 import { NotFoundError, ForbiddenError, BadRequestError } from '../../utils/errors.js';
 
-export const createCommunity = async (userId: string, data: { name: string; description?: string | null }) => {
-  const client = await getClient();
-  try {
-    await client.query('BEGIN');
+export const createCommunity = async (
+  userId: string,
+  data: { name: string; description?: string | null }
+) => {
+  return prisma.$transaction(async (tx) => {
+    const community = await tx.group.create({
+      data: {
+        name: data.name.trim(),
+        description: data.description ? data.description.trim() : null,
+        creatorId: userId,
+        collegeId: null,
+        visibility: 'global',
+        maxMembers: 1000,
+        expiresAt: null,
+        isCommunity: true,
+      },
+    });
 
-    const { rows: groupRows } = await client.query(
-      `INSERT INTO groups (name, description, creator_id, college_id, visibility, max_members, expires_at, is_community)
-       VALUES ($1, $2, $3, NULL, 'global', 1000, NULL, TRUE)
-       RETURNING *`,
-      [data.name.trim(), data.description ? data.description.trim() : null, userId]
-    );
-
-    const community = groupRows[0];
-
-    await client.query(
-      `INSERT INTO group_members (group_id, user_id, role) VALUES ($1, $2, 'admin')`,
-      [community.id, userId]
-    );
-
-    await client.query('COMMIT');
+    await tx.groupMember.create({
+      data: {
+        groupId: community.id,
+        userId,
+        role: 'admin',
+      },
+    });
 
     return {
       ...community,
@@ -31,195 +36,211 @@ export const createCommunity = async (userId: string, data: { name: string; desc
       isMember: true,
       userRole: 'admin',
     };
-  } catch (err) {
-    await client.query('ROLLBACK');
-    throw err;
-  } finally {
-    client.release();
-  }
+  });
 };
 
 export const getCommunities = async (userId: string, search?: string) => {
-  let queryText = `
-    SELECT g.*,
-           (SELECT COUNT(*)::int FROM group_members WHERE group_id = g.id) as member_count,
-           EXISTS(SELECT 1 FROM group_members WHERE group_id = g.id AND user_id = $1) as is_member,
-           (SELECT role FROM group_members WHERE group_id = g.id AND user_id = $1) as user_role
-    FROM groups g
-    WHERE g.is_community = TRUE
-  `;
-  const params: any[] = [userId];
+  const where: any = { isCommunity: true };
 
   if (search && search.trim()) {
-    queryText += ` AND (LOWER(g.name) LIKE $2 OR LOWER(g.description) LIKE $2)`;
-    params.push(`%${search.trim().toLowerCase()}%`);
+    const term = search.trim();
+    where.OR = [
+      { name: { contains: term, mode: 'insensitive' } },
+      { description: { contains: term, mode: 'insensitive' } },
+    ];
   }
 
-  queryText += ` ORDER BY member_count DESC, g.created_at DESC`;
+  const communities = await prisma.group.findMany({
+    where,
+    include: {
+      members: {
+        select: { userId: true, role: true },
+      },
+    },
+    orderBy: { createdAt: 'desc' },
+  });
 
-  const { rows } = await query(queryText, params);
-  return rows.map((r: any) => ({
-    ...r,
-    isCommunity: true,
-    is_community: true,
-    memberCount: r.member_count,
-    member_count: r.member_count,
-    isMember: r.is_member,
-    userRole: r.user_role,
-  }));
+  return communities
+    .map((g) => {
+      const memberCount = g.members.length;
+      const userMembership = g.members.find((m) => m.userId === userId);
+      return {
+        id: g.id,
+        name: g.name,
+        description: g.description,
+        creator_id: g.creatorId,
+        visibility: g.visibility,
+        max_members: g.maxMembers,
+        status: g.status,
+        created_at: g.createdAt,
+        isCommunity: true,
+        is_community: true,
+        memberCount,
+        member_count: memberCount,
+        isMember: Boolean(userMembership),
+        userRole: userMembership?.role || null,
+      };
+    })
+    .sort((a, b) => b.memberCount - a.memberCount);
 };
 
 export const getMyCommunities = async (userId: string) => {
-  const { rows } = await query(
-    `SELECT g.*, gm.role as user_role,
-            (SELECT COUNT(*)::int FROM group_members WHERE group_id = g.id) as member_count
-     FROM groups g
-     JOIN group_members gm ON gm.group_id = g.id AND gm.user_id = $1
-     WHERE g.is_community = TRUE
-     ORDER BY gm.joined_at DESC`,
-    [userId]
-  );
-  return rows.map((r: any) => ({
-    ...r,
+  const memberships = await prisma.groupMember.findMany({
+    where: {
+      userId,
+      group: { isCommunity: true },
+    },
+    include: {
+      group: {
+        include: {
+          _count: { select: { members: true } },
+        },
+      },
+    },
+    orderBy: { joinedAt: 'desc' },
+  });
+
+  return memberships.map((m) => ({
+    id: m.group.id,
+    name: m.group.name,
+    description: m.group.description,
+    creator_id: m.group.creatorId,
+    visibility: m.group.visibility,
+    max_members: m.group.maxMembers,
+    status: m.group.status,
+    created_at: m.group.createdAt,
     isCommunity: true,
     is_community: true,
-    memberCount: r.member_count,
-    member_count: r.member_count,
+    memberCount: m.group._count.members,
+    member_count: m.group._count.members,
     isMember: true,
-    userRole: r.user_role,
+    userRole: m.role,
   }));
 };
 
 export const getCommunityDetail = async (communityId: string, viewerId: string) => {
-  const { rows: commRows } = await query(
-    `SELECT * FROM groups WHERE id = $1 AND is_community = TRUE`,
-    [communityId]
-  );
-  if (!commRows.length) throw new NotFoundError('Community not found');
-  const community = commRows[0];
+  const community = await prisma.group.findFirst({
+    where: { id: communityId, isCommunity: true },
+    include: {
+      members: {
+        include: {
+          user: {
+            include: { college: true },
+          },
+        },
+        orderBy: [{ role: 'asc' }, { joinedAt: 'asc' }],
+      },
+    },
+  });
 
-  const { rows: memberRows } = await query(
-    `SELECT u.id, u.name, u.avatar_url, gm.role, gm.joined_at,
-            col.name as college_name, u.branch, u.year_of_study
-     FROM group_members gm
-     JOIN users u ON u.id = gm.user_id
-     LEFT JOIN colleges col ON col.id = u.college_id
-     WHERE gm.group_id = $1
-     ORDER BY (gm.role = 'admin') DESC, gm.joined_at ASC`,
-    [communityId]
-  );
+  if (!community) throw new NotFoundError('Community not found');
 
-  const viewerMember = memberRows.find((m: any) => m.id === viewerId);
+  const viewerMember = community.members.find((m) => m.userId === viewerId);
 
   return {
-    ...community,
-    isCommunity: true,
-    is_community: true,
+    id: community.id,
+    name: community.name,
+    description: community.description,
+    creator_id: community.creatorId,
+    college_id: community.collegeId,
+    visibility: 'global',
     maxMembers: 1000,
     max_members: 1000,
+    status: community.status,
+    created_at: community.createdAt,
     expiresAt: null,
     expires_at: null,
-    visibility: 'global',
+    isCommunity: true,
+    is_community: true,
     viewerId,
     viewerRole: viewerMember ? viewerMember.role : null,
-    isMember: !!viewerMember,
-    memberCount: memberRows.length,
-    member_count: memberRows.length,
-    members: memberRows.map((m: any) => ({
-      id: m.id,
-      name: m.name,
-      avatarUrl: m.avatar_url,
-      avatar_url: m.avatar_url,
+    isMember: Boolean(viewerMember),
+    memberCount: community.members.length,
+    member_count: community.members.length,
+    members: community.members.map((m) => ({
+      id: m.user.id,
+      name: m.user.name,
+      avatarUrl: m.user.avatarUrl,
+      avatar_url: m.user.avatarUrl,
       role: m.role,
-      joinedAt: m.joined_at,
-      joined_at: m.joined_at,
-      collegeName: m.college_name,
-      college_name: m.college_name,
-      branch: m.branch,
-      yearOfStudy: m.year_of_study,
+      joinedAt: m.joinedAt,
+      joined_at: m.joinedAt,
+      collegeName: m.user.college?.name || null,
+      college_name: m.user.college?.name || null,
+      branch: m.user.branch,
+      yearOfStudy: m.user.yearOfStudy,
     })),
   };
 };
 
 export const joinCommunity = async (communityId: string, userId: string) => {
-  const client = await getClient();
-  try {
-    await client.query('BEGIN');
+  return prisma.$transaction(async (tx) => {
+    const community = await tx.group.findFirst({
+      where: { id: communityId, isCommunity: true },
+      include: { _count: { select: { members: true } } },
+    });
 
-    const { rows: commRows } = await client.query(
-      `SELECT id, name, status, max_members FROM groups WHERE id = $1 AND is_community = TRUE FOR UPDATE`,
-      [communityId]
-    );
-    if (!commRows.length) throw new NotFoundError('Community not found');
-    const community = commRows[0];
-
+    if (!community) throw new NotFoundError('Community not found');
     if (community.status === 'closed') {
       throw new BadRequestError('This community is closed');
     }
-
-    const { rows: countRows } = await client.query(
-      `SELECT COUNT(*)::int as count FROM group_members WHERE group_id = $1`,
-      [communityId]
-    );
-
-    const limit = 1000;
-    if (countRows[0].count >= limit) {
+    if (community._count.members >= 1000) {
       throw new BadRequestError('Community has reached the maximum capacity of 1,000 members');
     }
 
-    await client.query(
-      `INSERT INTO group_members (group_id, user_id, role)
-       VALUES ($1, $2, 'member')
-       ON CONFLICT (group_id, user_id) DO NOTHING`,
-      [communityId, userId]
-    );
+    await tx.groupMember.upsert({
+      where: { groupId_userId: { groupId: communityId, userId } },
+      update: {},
+      create: {
+        groupId: communityId,
+        userId,
+        role: 'member',
+      },
+    });
 
-    await client.query('COMMIT');
     return { success: true, message: 'Joined community successfully' };
-  } catch (err) {
-    await client.query('ROLLBACK');
-    throw err;
-  } finally {
-    client.release();
-  }
+  });
 };
 
 export const leaveCommunity = async (communityId: string, userId: string) => {
-  const { rows: roleRows } = await query(
-    `SELECT role FROM group_members WHERE group_id = $1 AND user_id = $2`,
-    [communityId, userId]
-  );
-  if (!roleRows.length) throw new NotFoundError('Not a member of this community');
+  const member = await prisma.groupMember.findUnique({
+    where: { groupId_userId: { groupId: communityId, userId } },
+  });
+  if (!member) throw new NotFoundError('Not a member of this community');
 
-  // If user is admin and the only admin, check if there are other members
-  if (roleRows[0].role === 'admin') {
-    const { rows: adminCount } = await query(
-      `SELECT COUNT(*)::int as count FROM group_members WHERE group_id = $1 AND role = 'admin'`,
-      [communityId]
-    );
-    const { rows: totalCount } = await query(
-      `SELECT COUNT(*)::int as count FROM group_members WHERE group_id = $1`,
-      [communityId]
-    );
+  if (member.role === 'admin') {
+    const adminCount = await prisma.groupMember.count({
+      where: { groupId: communityId, role: 'admin' },
+    });
+    const totalCount = await prisma.groupMember.count({
+      where: { groupId: communityId },
+    });
 
-    if (adminCount[0].count === 1 && totalCount[0].count > 1) {
+    if (adminCount === 1 && totalCount > 1) {
       throw new BadRequestError('Please promote another member to admin before leaving');
     }
   }
 
-  await query(`DELETE FROM group_members WHERE group_id = $1 AND user_id = $2`, [communityId, userId]);
+  await prisma.groupMember.delete({
+    where: { groupId_userId: { groupId: communityId, userId } },
+  });
+
   return { success: true, message: 'Left community successfully' };
 };
 
 export const deleteCommunity = async (communityId: string, userId: string) => {
-  const { rows: roleRows } = await query(
-    `SELECT role FROM group_members WHERE group_id = $1 AND user_id = $2`,
-    [communityId, userId]
-  );
-  if (!roleRows.length || roleRows[0].role !== 'admin') {
+  const member = await prisma.groupMember.findUnique({
+    where: { groupId_userId: { groupId: communityId, userId } },
+    select: { role: true },
+  });
+
+  if (!member || member.role !== 'admin') {
     throw new ForbiddenError('Only admins can delete this community');
   }
 
-  await query(`DELETE FROM groups WHERE id = $1 AND is_community = TRUE`, [communityId]);
+  await prisma.group.delete({
+    where: { id: communityId },
+  });
+
   return { success: true, message: 'Community deleted successfully' };
 };

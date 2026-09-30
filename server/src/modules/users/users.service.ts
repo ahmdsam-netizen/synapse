@@ -1,100 +1,146 @@
-import { query } from '../../config/database.js';
-import { NotFoundError, ConflictError, BadRequestError } from '../../utils/errors.js';
+import { prisma } from '../../config/prisma.js';
+import { NotFoundError, BadRequestError } from '../../utils/errors.js';
 import { computeCompleteness } from '../../utils/profileCompleteness.js';
 
 async function recomputeCompleteness(userId: string) {
-  const userRes = await query(`SELECT name, bio, avatar_url, year_of_study, branch, looking_for FROM users WHERE id = $1`, [userId]);
-  if (!userRes.rows.length) return;
-  const user = userRes.rows[0];
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: {
+      name: true,
+      bio: true,
+      avatarUrl: true,
+      yearOfStudy: true,
+      branch: true,
+      lookingFor: true,
+    },
+  });
+  if (!user) return;
 
-  const skillsRes = await query(`SELECT COUNT(*) FROM user_skills WHERE user_id = $1`, [userId]);
-  const skillCount = parseInt(skillsRes.rows[0].count, 10);
+  const [skillCount, interestCount, workItemCount] = await Promise.all([
+    prisma.userSkill.count({ where: { userId } }),
+    prisma.userInterest.count({ where: { userId } }),
+    prisma.workItem.count({ where: { userId } }),
+  ]);
 
-  const interestsRes = await query(`SELECT COUNT(*) FROM user_interests WHERE user_id = $1`, [userId]);
-  const interestCount = parseInt(interestsRes.rows[0].count, 10);
+  const completeness = computeCompleteness({
+    name: user.name,
+    bio: user.bio,
+    avatar_url: user.avatarUrl,
+    year_of_study: user.yearOfStudy,
+    branch: user.branch,
+    looking_for: user.lookingFor,
+    skillCount,
+    interestCount,
+    workItemCount,
+  });
 
-  const workRes = await query(`SELECT COUNT(*) FROM work_items WHERE user_id = $1`, [userId]);
-  const workItemCount = parseInt(workRes.rows[0].count, 10);
-
-  const completeness = computeCompleteness({ ...user, skillCount, interestCount, workItemCount });
-  await query(`UPDATE users SET profile_completeness = $1 WHERE id = $2`, [completeness, userId]);
+  await prisma.user.update({
+    where: { id: userId },
+    data: { profileCompleteness: completeness },
+  });
 }
 
 export async function getProfile(viewerId: string | null, targetId: string) {
-  const userRes = await query(
-    `SELECT u.id, u.name, u.email, u.bio, u.avatar_url, u.year_of_study, u.branch, u.looking_for, u.profile_completeness, COALESCE(u.open_to_invites, TRUE) as open_to_invites, u.college_id, c.name as college_name, c.city as city 
-     FROM users u 
-     LEFT JOIN colleges c ON u.college_id = c.id 
-     WHERE u.id = $1`,
-    [targetId]
-  );
-  if (!userRes.rows.length) throw new NotFoundError('User not found');
-  const user = userRes.rows[0];
+  const user = await prisma.user.findUnique({
+    where: { id: targetId },
+    include: {
+      college: true,
+      skills: {
+        include: { skill: true },
+      },
+      interests: {
+        include: { interest: true },
+      },
+      workItems: true,
+    },
+  });
 
-  const skillsRes = await query(
-    `SELECT s.id, s.name, s.category, us.proficiency 
-     FROM user_skills us 
-     JOIN skills s ON us.skill_id = s.id 
-     WHERE us.user_id = $1`,
-    [targetId]
-  );
-  
-  const interestsRes = await query(
-    `SELECT i.id, i.name, i.category 
-     FROM user_interests ui 
-     JOIN interests i ON ui.interest_id = i.id 
-     WHERE ui.user_id = $1`,
-    [targetId]
-  );
-
-  const workRes = await query(
-    `SELECT id, title, description, tech_used, repo_url, live_url, media_url 
-     FROM work_items 
-     WHERE user_id = $1`,
-    [targetId]
-  );
+  if (!user) throw new NotFoundError('User not found');
 
   let connectionStatus = 'none';
   let connectionId: string | null = null;
   let mutualConnections = 0;
 
   if (viewerId && viewerId !== targetId) {
-    const connRes = await query(
-      `SELECT id AS connection_id, requester_id, receiver_id, status FROM connections 
-       WHERE (requester_id = $1 AND receiver_id = $2) OR (requester_id = $2 AND receiver_id = $1)`,
-      [viewerId, targetId]
-    );
+    const conn = await prisma.connection.findFirst({
+      where: {
+        OR: [
+          { requesterId: viewerId, receiverId: targetId },
+          { requesterId: targetId, receiverId: viewerId },
+        ],
+      },
+    });
 
-    if (connRes.rows.length > 0) {
-      const conn = connRes.rows[0];
-      connectionId = conn.connection_id;
+    if (conn) {
+      connectionId = conn.id;
       if (conn.status === 'accepted') connectionStatus = 'connected';
-      else if (conn.requester_id === viewerId) connectionStatus = 'pending_sent';
+      else if (conn.requesterId === viewerId) connectionStatus = 'pending_sent';
       else connectionStatus = 'pending_received';
     }
 
-    const mutualRes = await query(
-      `SELECT COUNT(*) FROM connection_edges e1 
-       JOIN connection_edges e2 ON e1.friend_id = e2.friend_id 
-       WHERE e1.user_id = $1 AND e2.user_id = $2`,
-      [viewerId, targetId]
-    );
-    mutualConnections = parseInt(mutualRes.rows[0].count, 10);
+    // Mutual friends count on symmetric connection_edges
+    const mutualRes: Array<{ count: bigint | number }> = await prisma.$queryRaw`
+      SELECT COUNT(*)::int as count FROM connection_edges e1 
+      JOIN connection_edges e2 ON e1.friend_id = e2.friend_id 
+      WHERE e1.user_id = ${viewerId}::uuid AND e2.user_id = ${targetId}::uuid
+    `;
+    mutualConnections = Number(mutualRes[0]?.count || 0);
   }
 
+  const flattenedSkills = user.skills.map((us) => ({
+    id: us.skill.id,
+    name: us.skill.name,
+    category: us.skill.category,
+    proficiency: us.proficiency,
+  }));
+
+  const flattenedInterests = user.interests.map((ui) => ({
+    id: ui.interest.id,
+    name: ui.interest.name,
+    category: ui.interest.category,
+  }));
+
+  const formattedWorkItems = user.workItems.map((wi) => ({
+    id: wi.id,
+    title: wi.title,
+    description: wi.description,
+    tech_used: wi.techUsed,
+    techUsed: wi.techUsed,
+    repo_url: wi.repoUrl,
+    repoUrl: wi.repoUrl,
+    live_url: wi.liveUrl,
+    liveUrl: wi.liveUrl,
+    media_url: wi.mediaUrl,
+    mediaUrl: wi.mediaUrl,
+  }));
+
   return {
-    ...user,
-    collegeId: user.college_id,
-    college_id: user.college_id,
-    collegeName: user.college_name,
-    college_name: user.college_name,
-    city: user.city,
-    college: user.college_id ? { id: user.college_id, name: user.college_name, city: user.city } : null,
-    openToInvites: user.open_to_invites ?? true,
-    open_to_invites: user.open_to_invites ?? true,
-    skills: skillsRes.rows,
-    interests: interestsRes.rows,
-    workItems: workRes.rows,
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    bio: user.bio,
+    avatarUrl: user.avatarUrl,
+    avatar_url: user.avatarUrl,
+    yearOfStudy: user.yearOfStudy,
+    year_of_study: user.yearOfStudy,
+    branch: user.branch,
+    lookingFor: user.lookingFor,
+    looking_for: user.lookingFor,
+    profileCompleteness: user.profileCompleteness,
+    profile_completeness: user.profileCompleteness,
+    openToInvites: user.openToInvites ?? true,
+    open_to_invites: user.openToInvites ?? true,
+    collegeId: user.collegeId,
+    college_id: user.collegeId,
+    collegeName: user.college?.name || null,
+    college_name: user.college?.name || null,
+    city: user.college?.city || null,
+    college: user.college
+      ? { id: user.college.id, name: user.college.name, city: user.college.city }
+      : null,
+    skills: flattenedSkills,
+    interests: flattenedInterests,
+    workItems: formattedWorkItems,
     connectionStatus,
     connectionId,
     connection_id: connectionId,
@@ -107,61 +153,63 @@ export async function getMe(userId: string) {
 }
 
 export async function updateProfile(userId: string, data: any) {
-  const fields = [];
-  const values = [];
-  let idx = 1;
+  let collegeId = data.collegeId || data.college_id;
 
-  if (data.collegeId || data.college_id) {
-    data.college_id = data.collegeId || data.college_id;
-  } else if (data.collegeName || data.college_name) {
+  if (!collegeId && (data.collegeName || data.college_name)) {
     const college = await addCollege(data.collegeName || data.college_name, data.city);
-    data.college_id = college.id;
+    collegeId = college.id;
   }
 
-  const mapping: Record<string, string> = {
-    name: 'name',
-    bio: 'bio',
-    avatarUrl: 'avatar_url',
-    yearOfStudy: 'year_of_study',
-    branch: 'branch',
-    lookingFor: 'looking_for',
-    openToInvites: 'open_to_invites',
-    open_to_invites: 'open_to_invites',
-    college_id: 'college_id',
-  };
+  const updateData: Record<string, any> = {};
 
-  for (const [key, value] of Object.entries(data)) {
-    if (mapping[key] !== undefined && value !== undefined) {
-      fields.push(`${mapping[key]} = $${idx}`);
-      values.push(value);
-      idx++;
-    }
+  if (data.name !== undefined) updateData.name = data.name;
+  if (data.bio !== undefined) updateData.bio = data.bio;
+  if (data.avatarUrl !== undefined || data.avatar_url !== undefined) {
+    updateData.avatarUrl = data.avatarUrl || data.avatar_url;
+  }
+  if (data.yearOfStudy !== undefined || data.year_of_study !== undefined) {
+    updateData.yearOfStudy = data.yearOfStudy ?? data.year_of_study;
+  }
+  if (data.branch !== undefined) updateData.branch = data.branch;
+  if (data.lookingFor !== undefined || data.looking_for !== undefined) {
+    updateData.lookingFor = data.lookingFor || data.looking_for;
+  }
+  if (data.openToInvites !== undefined || data.open_to_invites !== undefined) {
+    updateData.openToInvites = Boolean(data.openToInvites ?? data.open_to_invites);
+  }
+  if (collegeId !== undefined) {
+    updateData.collegeId = collegeId;
   }
 
-  if (fields.length === 0) return getMe(userId);
+  if (Object.keys(updateData).length > 0) {
+    await prisma.user.update({
+      where: { id: userId },
+      data: updateData,
+    });
+    await recomputeCompleteness(userId);
+  }
 
-  values.push(userId);
-  await query(`UPDATE users SET ${fields.join(', ')} WHERE id = $${idx} RETURNING *`, values);
-
-  await recomputeCompleteness(userId);
-  
   return getMe(userId);
 }
 
-export async function addSkill(userId: string, payload: { skillId?: string; name?: string; proficiency: string }) {
+export async function addSkill(
+  userId: string,
+  payload: { skillId?: string; name?: string; proficiency: string }
+) {
   let finalSkillId = payload.skillId;
 
   if (!finalSkillId && payload.name) {
     const trimmed = payload.name.trim();
-    const existing = await query(`SELECT id FROM skills WHERE LOWER(name) = LOWER($1) LIMIT 1`, [trimmed]);
-    if (existing.rows.length > 0) {
-      finalSkillId = existing.rows[0].id;
+    const existing = await prisma.skill.findFirst({
+      where: { name: { equals: trimmed, mode: 'insensitive' } },
+    });
+    if (existing) {
+      finalSkillId = existing.id;
     } else {
-      const inserted = await query(
-        `INSERT INTO skills (name, category) VALUES ($1, 'Other') RETURNING id`,
-        [trimmed]
-      );
-      finalSkillId = inserted.rows[0].id;
+      const created = await prisma.skill.create({
+        data: { name: trimmed, category: 'Other' },
+      });
+      finalSkillId = created.id;
     }
   }
 
@@ -169,48 +217,69 @@ export async function addSkill(userId: string, payload: { skillId?: string; name
     throw new BadRequestError('Skill ID or valid skill name is required');
   }
 
-  const skillRes = await query(`SELECT id, name, category FROM skills WHERE id = $1`, [finalSkillId]);
-  if (!skillRes.rows.length) throw new NotFoundError('Skill not found');
+  const skill = await prisma.skill.findUnique({
+    where: { id: finalSkillId },
+  });
+  if (!skill) throw new NotFoundError('Skill not found');
 
-  await query(
-    `INSERT INTO user_skills (user_id, skill_id, proficiency) 
-     VALUES ($1, $2, $3) 
-     ON CONFLICT (user_id, skill_id) DO UPDATE SET proficiency = $3 RETURNING *`,
-    [userId, finalSkillId, payload.proficiency]
-  );
+  await prisma.userSkill.upsert({
+    where: {
+      userId_skillId: {
+        userId,
+        skillId: finalSkillId,
+      },
+    },
+    update: { proficiency: payload.proficiency },
+    create: {
+      userId,
+      skillId: finalSkillId,
+      proficiency: payload.proficiency,
+    },
+  });
 
   await recomputeCompleteness(userId);
 
-  return { 
-    id: finalSkillId, 
+  return {
+    id: finalSkillId,
     skill_id: finalSkillId,
-    name: skillRes.rows[0].name, 
-    category: skillRes.rows[0].category, 
-    proficiency: payload.proficiency 
+    name: skill.name,
+    category: skill.category,
+    proficiency: payload.proficiency,
   };
 }
 
 export async function removeSkill(userId: string, skillId: string) {
-  const res = await query(`DELETE FROM user_skills WHERE user_id = $1 AND skill_id = $2`, [userId, skillId]);
-  if (res.rowCount === 0) throw new NotFoundError('Skill not found in user profile');
+  try {
+    await prisma.userSkill.delete({
+      where: {
+        userId_skillId: { userId, skillId },
+      },
+    });
+  } catch {
+    throw new NotFoundError('Skill not found in user profile');
+  }
 
   await recomputeCompleteness(userId);
 }
 
-export async function addInterest(userId: string, payload: { interestId?: string; name?: string }) {
+export async function addInterest(
+  userId: string,
+  payload: { interestId?: string; name?: string }
+) {
   let finalInterestId = payload.interestId;
 
   if (!finalInterestId && payload.name) {
     const trimmed = payload.name.trim();
-    const existing = await query(`SELECT id FROM interests WHERE LOWER(name) = LOWER($1) LIMIT 1`, [trimmed]);
-    if (existing.rows.length > 0) {
-      finalInterestId = existing.rows[0].id;
+    const existing = await prisma.interest.findFirst({
+      where: { name: { equals: trimmed, mode: 'insensitive' } },
+    });
+    if (existing) {
+      finalInterestId = existing.id;
     } else {
-      const inserted = await query(
-        `INSERT INTO interests (name, category) VALUES ($1, 'Other') RETURNING id`,
-        [trimmed]
-      );
-      finalInterestId = inserted.rows[0].id;
+      const created = await prisma.interest.create({
+        data: { name: trimmed, category: 'Other' },
+      });
+      finalInterestId = created.id;
     }
   }
 
@@ -218,201 +287,250 @@ export async function addInterest(userId: string, payload: { interestId?: string
     throw new BadRequestError('Interest ID or valid interest name is required');
   }
 
-  const intRes = await query(`SELECT id, name, category FROM interests WHERE id = $1`, [finalInterestId]);
-  if (!intRes.rows.length) throw new NotFoundError('Interest not found');
+  const interest = await prisma.interest.findUnique({
+    where: { id: finalInterestId },
+  });
+  if (!interest) throw new NotFoundError('Interest not found');
 
-  await query(
-    `INSERT INTO user_interests (user_id, interest_id) 
-     VALUES ($1, $2) 
-     ON CONFLICT (user_id, interest_id) DO NOTHING RETURNING *`,
-    [userId, finalInterestId]
-  );
+  await prisma.userInterest.upsert({
+    where: {
+      userId_interestId: {
+        userId,
+        interestId: finalInterestId,
+      },
+    },
+    update: {},
+    create: {
+      userId,
+      interestId: finalInterestId,
+    },
+  });
 
   await recomputeCompleteness(userId);
 
-  return { 
-    id: finalInterestId, 
+  return {
+    id: finalInterestId,
     interest_id: finalInterestId,
-    name: intRes.rows[0].name, 
-    category: intRes.rows[0].category 
+    name: interest.name,
+    category: interest.category,
   };
 }
 
 export async function removeInterest(userId: string, interestId: string) {
-  const res = await query(`DELETE FROM user_interests WHERE user_id = $1 AND interest_id = $2`, [userId, interestId]);
-  if (res.rowCount === 0) throw new NotFoundError('Interest not found in user profile');
+  try {
+    await prisma.userInterest.delete({
+      where: {
+        userId_interestId: { userId, interestId },
+      },
+    });
+  } catch {
+    throw new NotFoundError('Interest not found in user profile');
+  }
 
   await recomputeCompleteness(userId);
 }
 
 export async function createWorkItem(userId: string, data: any) {
-  const res = await query(
-    `INSERT INTO work_items (user_id, title, description, tech_used, repo_url, live_url, media_url) 
-     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-    [userId, data.title, data.description || null, data.techUsed || [], data.repoUrl || null, data.liveUrl || null, data.mediaUrl || null]
-  );
+  const workItem = await prisma.workItem.create({
+    data: {
+      userId,
+      title: data.title,
+      description: data.description || null,
+      techUsed: data.techUsed || data.tech_used || [],
+      repoUrl: data.repoUrl || data.repo_url || null,
+      liveUrl: data.liveUrl || data.live_url || null,
+      mediaUrl: data.mediaUrl || data.media_url || null,
+    },
+  });
 
   await recomputeCompleteness(userId);
-  return res.rows[0];
+
+  return {
+    ...workItem,
+    tech_used: workItem.techUsed,
+    repo_url: workItem.repoUrl,
+    live_url: workItem.liveUrl,
+    media_url: workItem.mediaUrl,
+  };
 }
 
 export async function updateWorkItem(userId: string, workItemId: string, data: any) {
-  const fields = [];
-  const values = [];
-  let idx = 1;
+  const existing = await prisma.workItem.findFirst({
+    where: { id: workItemId, userId },
+  });
+  if (!existing) throw new NotFoundError('Work item not found');
 
-  const mapping: Record<string, string> = {
-    title: 'title',
-    description: 'description',
-    techUsed: 'tech_used',
-    repoUrl: 'repo_url',
-    liveUrl: 'live_url',
-    mediaUrl: 'media_url'
+  const updateData: Record<string, any> = {};
+  if (data.title !== undefined) updateData.title = data.title;
+  if (data.description !== undefined) updateData.description = data.description;
+  if (data.techUsed !== undefined || data.tech_used !== undefined) {
+    updateData.techUsed = data.techUsed || data.tech_used;
+  }
+  if (data.repoUrl !== undefined || data.repo_url !== undefined) {
+    updateData.repoUrl = data.repoUrl || data.repo_url;
+  }
+  if (data.liveUrl !== undefined || data.live_url !== undefined) {
+    updateData.liveUrl = data.liveUrl || data.live_url;
+  }
+  if (data.mediaUrl !== undefined || data.media_url !== undefined) {
+    updateData.mediaUrl = data.mediaUrl || data.media_url;
+  }
+
+  const updated = await prisma.workItem.update({
+    where: { id: workItemId },
+    data: updateData,
+  });
+
+  return {
+    ...updated,
+    tech_used: updated.techUsed,
+    repo_url: updated.repoUrl,
+    live_url: updated.liveUrl,
+    media_url: updated.mediaUrl,
   };
-
-  for (const [key, value] of Object.entries(data)) {
-    if (mapping[key] !== undefined && value !== undefined) {
-      fields.push(`${mapping[key]} = $${idx}`);
-      values.push(value);
-      idx++;
-    }
-  }
-
-  if (fields.length === 0) {
-    const res = await query(`SELECT * FROM work_items WHERE id = $1 AND user_id = $2`, [workItemId, userId]);
-    if (!res.rows.length) throw new NotFoundError('Work item not found');
-    return res.rows[0];
-  }
-
-  values.push(workItemId, userId);
-  const res = await query(
-    `UPDATE work_items SET ${fields.join(', ')} WHERE id = $${idx} AND user_id = $${idx + 1} RETURNING *`,
-    values
-  );
-
-  if (res.rowCount === 0) throw new NotFoundError('Work item not found');
-  return res.rows[0];
 }
 
 export async function deleteWorkItem(userId: string, workItemId: string) {
-  const res = await query(`DELETE FROM work_items WHERE id = $1 AND user_id = $2`, [workItemId, userId]);
-  if (res.rowCount === 0) throw new NotFoundError('Work item not found');
+  const existing = await prisma.workItem.findFirst({
+    where: { id: workItemId, userId },
+  });
+  if (!existing) throw new NotFoundError('Work item not found');
+
+  await prisma.workItem.delete({
+    where: { id: workItemId },
+  });
+
   await recomputeCompleteness(userId);
 }
 
 export async function searchSkills(q: string) {
   if (!q || !q.trim()) {
-    const res = await query(
-      `SELECT id, name, category FROM skills ORDER BY category, name LIMIT 100`
-    );
-    return res.rows;
+    return prisma.skill.findMany({
+      orderBy: [{ category: 'asc' }, { name: 'asc' }],
+      take: 100,
+    });
   }
   const term = q.trim();
-  const queryStr = `%${term}%`;
-  const res = await query(
-    `SELECT id, name, category FROM skills 
-     WHERE name ILIKE $1 
-     ORDER BY 
-       CASE 
-         WHEN LOWER(name) = LOWER($2) THEN 1
-         WHEN LOWER(name) LIKE LOWER($3) THEN 2
-         ELSE 3 
-       END, 
-       name 
-     LIMIT 50`,
-    [queryStr, term, `${term}%`]
-  );
-  return res.rows;
+  return prisma.skill.findMany({
+    where: {
+      name: { contains: term, mode: 'insensitive' },
+    },
+    orderBy: { name: 'asc' },
+    take: 50,
+  });
 }
 
 export async function searchInterests(q: string) {
   if (!q || !q.trim()) {
-    const res = await query(
-      `SELECT id, name, category FROM interests ORDER BY category, name LIMIT 100`
-    );
-    return res.rows;
+    return prisma.interest.findMany({
+      orderBy: [{ category: 'asc' }, { name: 'asc' }],
+      take: 100,
+    });
   }
   const term = q.trim();
-  const queryStr = `%${term}%`;
-  const res = await query(
-    `SELECT id, name, category FROM interests 
-     WHERE name ILIKE $1 
-     ORDER BY 
-       CASE 
-         WHEN LOWER(name) = LOWER($2) THEN 1
-         WHEN LOWER(name) LIKE LOWER($3) THEN 2
-         ELSE 3 
-       END, 
-       name 
-     LIMIT 50`,
-    [queryStr, term, `${term}%`]
-  );
-  return res.rows;
+  return prisma.interest.findMany({
+    where: {
+      name: { contains: term, mode: 'insensitive' },
+    },
+    orderBy: { name: 'asc' },
+    take: 50,
+  });
 }
 
 export async function searchColleges(q?: string) {
   if (!q || !q.trim()) {
-    const res = await query(
-      `SELECT id, name, city, email_domain FROM colleges ORDER BY name ASC LIMIT 100`
-    );
-    return res.rows;
+    return prisma.college.findMany({
+      select: { id: true, name: true, city: true, emailDomain: true },
+      orderBy: { name: 'asc' },
+      take: 100,
+    });
   }
   const term = q.trim();
-  const queryStr = `%${term}%`;
-  const res = await query(
-    `SELECT id, name, city, email_domain FROM colleges 
-     WHERE name ILIKE $1 OR city ILIKE $1 
-     ORDER BY 
-       CASE 
-         WHEN LOWER(name) = LOWER($2) THEN 1
-         WHEN LOWER(name) LIKE LOWER($3) THEN 2
-         ELSE 3 
-       END, 
-       name 
-     LIMIT 50`,
-    [queryStr, term, `${term}%`]
-  );
-  return res.rows;
+  return prisma.college.findMany({
+    where: {
+      OR: [
+        { name: { contains: term, mode: 'insensitive' } },
+        { city: { contains: term, mode: 'insensitive' } },
+      ],
+    },
+    select: { id: true, name: true, city: true, emailDomain: true },
+    orderBy: { name: 'asc' },
+    take: 50,
+  });
 }
 
 export async function addCollege(name: string, city?: string) {
   const cName = name.trim();
-  const existing = await query(`SELECT id, name, city FROM colleges WHERE name ILIKE $1`, [cName]);
-  if (existing.rows.length) {
-    if (city && city.trim() && !existing.rows[0].city) {
-      await query(`UPDATE colleges SET city = $1 WHERE id = $2`, [city.trim(), existing.rows[0].id]);
-      existing.rows[0].city = city.trim();
+  const existing = await prisma.college.findFirst({
+    where: { name: { equals: cName, mode: 'insensitive' } },
+  });
+
+  if (existing) {
+    if (city && city.trim() && !existing.city) {
+      return prisma.college.update({
+        where: { id: existing.id },
+        data: { city: city.trim() },
+      });
     }
-    return existing.rows[0];
+    return existing;
   }
+
   const cleanBase = cName.toLowerCase().replace(/[^a-z0-9]/g, '') || 'college';
   const domain = `${cleanBase}-${Math.floor(1000 + Math.random() * 9000)}.edu`;
-  const res = await query(
-    `INSERT INTO colleges (name, email_domain, city) VALUES ($1, $2, $3) RETURNING id, name, city`,
-    [cName, domain, city || 'India']
-  );
-  return res.rows[0];
+
+  return prisma.college.create({
+    data: {
+      name: cName,
+      emailDomain: domain,
+      city: city || 'India',
+    },
+  });
 }
 
 export async function getAllUsersForEmbedding() {
-  const usersRes = await query(`
-    SELECT u.id, u.name, u.avatar_url, u.bio, u.year_of_study, u.branch, u.looking_for, c.name as college_name,
-      COALESCE((SELECT json_agg(s.name) FROM user_skills us JOIN skills s ON us.skill_id = s.id WHERE us.user_id = u.id), '[]'::json) as skills,
-      COALESCE((SELECT json_agg(i.name) FROM user_interests ui JOIN interests i ON ui.interest_id = i.id WHERE ui.user_id = u.id), '[]'::json) as interests
-    FROM users u
-    LEFT JOIN colleges c ON u.college_id = c.id
-  `);
-  return usersRes.rows;
+  const users = await prisma.user.findMany({
+    include: {
+      college: true,
+      skills: { include: { skill: true } },
+      interests: { include: { interest: true } },
+    },
+  });
+
+  return users.map((u) => ({
+    id: u.id,
+    name: u.name,
+    avatar_url: u.avatarUrl,
+    bio: u.bio,
+    year_of_study: u.yearOfStudy,
+    branch: u.branch,
+    looking_for: u.lookingFor,
+    college_name: u.college?.name || null,
+    skills: u.skills.map((s) => s.skill.name),
+    interests: u.interests.map((i) => i.interest.name),
+  }));
 }
 
 export async function getUserForEmbedding(userId: string) {
-  const userRes = await query(`
-    SELECT u.id, u.name, u.avatar_url, u.bio, u.year_of_study, u.branch, u.looking_for, c.name as college_name,
-      COALESCE((SELECT json_agg(s.name) FROM user_skills us JOIN skills s ON us.skill_id = s.id WHERE us.user_id = u.id), '[]'::json) as skills,
-      COALESCE((SELECT json_agg(i.name) FROM user_interests ui JOIN interests i ON ui.interest_id = i.id WHERE ui.user_id = u.id), '[]'::json) as interests
-    FROM users u
-    LEFT JOIN colleges c ON u.college_id = c.id
-    WHERE u.id = $1
-  `, [userId]);
-  return userRes.rows[0] || null;
+  const u = await prisma.user.findUnique({
+    where: { id: userId },
+    include: {
+      college: true,
+      skills: { include: { skill: true } },
+      interests: { include: { interest: true } },
+    },
+  });
+  if (!u) return null;
+
+  return {
+    id: u.id,
+    name: u.name,
+    avatar_url: u.avatarUrl,
+    bio: u.bio,
+    year_of_study: u.yearOfStudy,
+    branch: u.branch,
+    looking_for: u.lookingFor,
+    college_name: u.college?.name || null,
+    skills: u.skills.map((s) => s.skill.name),
+    interests: u.interests.map((i) => i.interest.name),
+  };
 }

@@ -1,4 +1,4 @@
-import { query } from '../../config/database.js';
+import { prisma } from '../../config/prisma.js';
 import { decodeCursor, encodeCursor, PaginationResult } from '../../utils/pagination.js';
 
 interface SearchFilters {
@@ -14,7 +14,11 @@ interface SearchFilters {
   limit?: number;
 }
 
-export const searchUsers = async (userId: string, _collegeId: string | null, filters: SearchFilters): Promise<PaginationResult<any>> => {
+export const searchUsers = async (
+  userId: string,
+  _collegeId: string | null,
+  filters: SearchFilters
+): Promise<PaginationResult<any>> => {
   const {
     q = '',
     skills = [],
@@ -24,7 +28,7 @@ export const searchUsers = async (userId: string, _collegeId: string | null, fil
     year,
     lookingFor,
     cursor,
-    limit = 30
+    limit = 30,
   } = filters;
 
   const params: any[] = [userId];
@@ -143,7 +147,7 @@ export const searchUsers = async (userId: string, _collegeId: string | null, fil
   baseQuery += ` ORDER BY (skill_match_count + interest_match_count) DESC, last_active DESC NULLS LAST, id ASC LIMIT $${paramIndex}`;
   params.push(limit + 1);
 
-  const { rows } = await query(baseQuery, params);
+  const rows: any[] = await prisma.$queryRawUnsafe(baseQuery, ...params);
 
   const hasMore = rows.length > limit;
   const items = hasMore ? rows.slice(0, limit) : rows;
@@ -152,63 +156,67 @@ export const searchUsers = async (userId: string, _collegeId: string | null, fil
     return { data: [], nextCursor: null, hasMore: false };
   }
 
-  const userIds = items.map(u => u.id);
-  
-  const skillsPromise = query(`
-    SELECT us.user_id, s.id, s.name 
-    FROM user_skills us
-    JOIN skills s ON s.id = us.skill_id
-    WHERE us.user_id = ANY($1)
-  `, [userIds]);
+  const userIds = items.map((u) => u.id);
 
-  const interestsPromise = query(`
-    SELECT ui.user_id, i.id, i.name 
-    FROM user_interests ui
-    JOIN interests i ON i.id = ui.interest_id
-    WHERE ui.user_id = ANY($1)
-  `, [userIds]);
-
-  const [skillsRes, interestsRes] = await Promise.all([skillsPromise, interestsPromise]);
+  const [skillsRes, interestsRes] = await Promise.all([
+    prisma.userSkill.findMany({
+      where: { userId: { in: userIds } },
+      include: { skill: true },
+    }),
+    prisma.userInterest.findMany({
+      where: { userId: { in: userIds } },
+      include: { interest: true },
+    }),
+  ]);
 
   const userSkillsMap = new Map<string, any[]>();
   const userInterestsMap = new Map<string, any[]>();
 
-  for (const row of skillsRes.rows) {
-    if (!userSkillsMap.has(row.user_id)) userSkillsMap.set(row.user_id, []);
-    userSkillsMap.get(row.user_id)!.push({ id: row.id, name: row.name });
+  for (const row of skillsRes) {
+    if (!userSkillsMap.has(row.userId)) userSkillsMap.set(row.userId, []);
+    userSkillsMap.get(row.userId)!.push({ id: row.skill.id, name: row.skill.name });
   }
 
-  for (const row of interestsRes.rows) {
-    if (!userInterestsMap.has(row.user_id)) userInterestsMap.set(row.user_id, []);
-    userInterestsMap.get(row.user_id)!.push({ id: row.id, name: row.name });
+  for (const row of interestsRes) {
+    if (!userInterestsMap.has(row.userId)) userInterestsMap.set(row.userId, []);
+    userInterestsMap.get(row.userId)!.push({ id: row.interest.id, name: row.interest.name });
   }
 
-  const enrichedItems = items.map(item => ({
+  const enrichedItems = items.map((item) => ({
     ...item,
     avatarUrl: item.avatar_url,
+    avatar_url: item.avatar_url,
     collegeName: item.college_name,
+    college_name: item.college_name,
     yearOfStudy: item.year_of_study,
+    year_of_study: item.year_of_study,
     lookingFor: item.looking_for,
+    looking_for: item.looking_for,
     profileCompleteness: item.profile_completeness,
+    profile_completeness: item.profile_completeness,
     lastActive: item.last_active,
+    last_active: item.last_active,
     skills: userSkillsMap.get(item.id) || [],
     interests: userInterestsMap.get(item.id) || [],
     matchedSkills: [],
     matchedInterests: [],
     matched_skills: [],
-    matched_interests: []
+    matched_interests: [],
   }));
 
   const lastItem = enrichedItems[enrichedItems.length - 1];
-  const nextCursor = hasMore && lastItem ? encodeCursor({
-    tagCount: Number(lastItem.skill_match_count) + Number(lastItem.interest_match_count),
-    lastActive: lastItem.last_active,
-    id: lastItem.id
-  }) : null;
+  const nextCursor =
+    hasMore && lastItem
+      ? encodeCursor({
+          tagCount: Number(lastItem.skill_match_count) + Number(lastItem.interest_match_count),
+          lastActive: lastItem.last_active,
+          id: lastItem.id,
+        })
+      : null;
 
   return {
     data: enrichedItems,
     nextCursor,
-    hasMore
+    hasMore,
   };
 };

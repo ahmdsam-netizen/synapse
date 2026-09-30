@@ -1,3 +1,4 @@
+// @ts-ignore
 import pg from 'pg';
 import { env } from './env.js';
 
@@ -10,7 +11,7 @@ export const pool = new Pool({
   connectionTimeoutMillis: 5000,
 });
 
-pool.on('error', (err) => {
+pool.on('error', (err: any) => {
   // M-05: Log but do not exit — let the pool reconnect automatically.
   // Calling process.exit() here would crash the server on any transient
   // network blip between the service and the database.

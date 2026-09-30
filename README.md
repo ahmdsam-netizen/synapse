@@ -14,14 +14,14 @@ The platform follows an event-driven, decoupled **Microservices Architecture**. 
 graph TD
     Client["React 19 Frontend<br/>Vite 8 - TailwindCSS 4<br/>Port: 5173"]
     Gateway["API Gateway<br/>Express 5 - Consistent Hash Proxy<br/>Port: 3001"]
-    CoreService["Core Platform Service<br/>Node.js - Express - TS<br/>Port: 4000"]
+    CoreService["Core Platform Service<br/>Node.js - Express - TS - Prisma ORM<br/>Port: 4000"]
     RecService["Recommendation Microservice<br/>Python 3.11 - FastAPI<br/>Host Port: 5001"]
     Chat1["Chat Microservice Instance 1<br/>Socket.IO - TypeScript<br/>Port: 4001"]
     Chat2["Chat Microservice Instance 2<br/>Socket.IO - TypeScript<br/>Port: 4002"]
-    PrimaryDB[("Primary Database<br/>PostgreSQL 16<br/>Port: 5432")]
+    PrimaryDB[("Primary Database<br/>PostgreSQL 16 (Prisma Schema)<br/>Port: 5432")]
     VectorDB[("Dedicated Vector DB<br/>pgvector HNSW<br/>Port: 5433")]
-    RedisCache[("Redis 7<br/>Pub/Sub Adapter & Queue<br/>Port: 6379")]
-    Worker["Background Worker<br/>BullMQ Queue"]
+    RedisCache[("Redis 7<br/>Socket.IO Pub/Sub & Activity Throttling<br/>Port: 6379")]
+    Worker["Background Worker<br/>BullMQ (Idle / Legacy Stub)"]
 
     Client -->|"HTTP / REST Requests"| Gateway
     Client -->|"WebSocket Handshakes (/socket.io)"| Gateway
@@ -31,8 +31,8 @@ graph TD
     Gateway -->|"Consistent Hash Affinity (userId -> Node)<br/>WebSockets & REST (/socket.io, /api/chat)"| Chat1
     Gateway -->|"Consistent Hash Affinity (userId -> Node)<br/>WebSockets & REST (/socket.io, /api/chat)"| Chat2
 
-    CoreService -->|"CRUD & Graph Edges"| PrimaryDB
-    CoreService -->|"Session & Job Caching"| RedisCache
+    CoreService -->|"Prisma Client & Graph Queries"| PrimaryDB
+    CoreService -->|"User Activity Throttling (5-min TTL)"| RedisCache
 
     Chat1 -->|"Persist Messages (group_messages)"| PrimaryDB
     Chat2 -->|"Persist Messages (group_messages)"| PrimaryDB
@@ -42,8 +42,7 @@ graph TD
     RecService -->|"Sub-Millisecond HNSW Cosine Search"| VectorDB
     RecService -.->|"Internal Data Sync: /api/internal/*"| CoreService
 
-    Worker -->|"Queue Processing"| RedisCache
-    Worker -->|"Scheduled Cleanups"| PrimaryDB
+    Worker -.->|"Idle Queue Listener (Superseded by Python Service)"| RedisCache
 ```
 
 ### 2. Structural Component & Data Flow Map
@@ -72,20 +71,21 @@ graph TD
 +-----------------------+     +-----------------------+     +-----------------------------------+
 |     CORE SERVICE      |     | RECOMMENDATION SERVICE|     |     CHAT MICROSERVICE CLUSTER     |
 | Node.js, Express, TS  |     | Python 3.11, FastAPI  |     | Node.js, TypeScript, Socket.IO    |
-| Port: 4000 (Internal) |     | Host: 5001 | Cont: 5000 |   | chat-1 (:4001) | chat-2 (:4002)   |
-| - Users, Skills CRUD  |     | - fastembed ONNX SIMD |     | - Group & Community Chat Rooms    |
-| - 2-Hop Graph Queries |<----| - Multi-Attr Vectors  |     | - Redis Pub/Sub Cross-Server Sync |
-| - Groups & Communities|     | - HNSW Cosine Search  |     | - User-to-Server Cache Stickiness |
+| Prisma ORM (v6)       |     | Host: 5001 | Cont: 5000 |   | chat-1 (:4001) | chat-2 (:4002)   |
+| Port: 4000 (Internal) |     | - fastembed ONNX SIMD |     | - Group & Community Chat Rooms    |
+| - Users, Skills CRUD  |     | - Multi-Attr Vectors  |     | - Redis Pub/Sub Cross-Server Sync |
+| - 2-Hop Graph Queries |<----| - HNSW Cosine Search  |     | - User-to-Server Cache Stickiness |
+| - Groups & Communities|     |                       |     |                                   |
 +-----------------------+     +-----------------------+     +-----------------------------------+
         |          \                      |                         |                 |
         |           \                     |                         |                 |
         v            v                    v                         v                 v
 +---------------+  +--------------------+  +--------------------+  +--------------------+
-|  PRIMARY DB   |  |    REDIS CACHE     |  |     VECTOR DB      |  |  POSTGRES DB       |
-| PostgreSQL 16 |  |    Redis 7         |  |   pgvector / PG16  |  | Table:             |
-| Port: 5432    |  |    Port: 6379      |  |   Port: 5433       |  | group_messages     |
-| Relational    |  | Socket.IO Adapter  |  | 384-d Embeddings   |  | Relational Cascade |
-| Core Entities |  | BullMQ Queue       |  | HNSW Cosine Index  |  | Chat History       |
+|  PRIMARY DB   |  |    REDIS 7         |  |     VECTOR DB      |  |  POSTGRES DB       |
+| PostgreSQL 16 |  |    Port: 6379      |  |   pgvector / PG16  |  | Table:             |
+| Managed by    |  | - Socket.IO Pub/Sub|  |   Port: 5433       |  | group_messages     |
+| Prisma ORM    |  | - Activity Throttle|  | 384-d Embeddings   |  | Relational Cascade |
+| Port: 5432    |  | - (BullMQ: Idle)   |  | HNSW Cosine Index  |  | Chat History       |
 +---------------+  +--------------------+  +--------------------+  +--------------------+
 ```
 
@@ -118,9 +118,15 @@ graph TD
 ---
 
 ### 2. Core Platform Service (`server/`)
-- **Technology**: Node.js, Express 5, TypeScript 7, PostgreSQL (`pg`)
+- **Technology**: Node.js, Express 5, TypeScript 7, Prisma ORM (v6.4.1), PostgreSQL 16
 - **Port**: `4000` (Internal Docker network)
 - **Role & Operations**:
+  - **Prisma ORM Data Layer**:
+    - Manages database interactions through a type-safe Prisma client with built-in connection pooling.
+    - All entity operations (`users`, `profiles`, `groups`, `communities`, `boards`, `connections`) utilize atomic Prisma queries and `$transaction` blocks.
+    - Specialized operations (such as PostgreSQL array overlap filters `&&` and 2-hop graph traversals) are executed with full type safety via `prisma.$queryRaw` and `prisma.$queryRawUnsafe`.
+  - **Activity Throttling via Redis**:
+    - In-memory key caching (`la:<userId>`, 5-minute TTL) in the authentication middleware prevents repetitive write queries to PostgreSQL on every active API request.
   - **Business Transactions & Entity CRUD**: Manages user accounts, college domains, user skills, user interests, work portfolios, project groups, and permanent student communities.
   - **College & Institution Directory**:
     - Supports institution search (`GET /api/users/colleges?q=...`) and automated resolution during profile updates (`PUT /api/users/me`).
@@ -220,11 +226,18 @@ graph TD
 
 ---
 
-### 7. Background Worker & Queue (`synapse-worker` & `synapse-redis`)
+### 7. Background Worker & Redis (`synapse-worker` & `synapse-redis`)
 - **Technology**: Redis 7, BullMQ
 - **Port**: `6379`
 - **Role & Operations**:
-  - Asynchronous background queue processing for non-interactive jobs, notifications, and scheduled database cleanups.
+  - **Worker Status (BullMQ - Idle / Legacy Stub)**:
+    - Originally built for asynchronous recommendation calculation in Node.js.
+    - Since vector embeddings and semantic matching have been migrated to the dedicated Python FastAPI microservice (`recommendation-service`), the BullMQ recommendation queue is currently idle.
+    - The worker process is maintained as a reserved background runner for future non-ML async jobs (such as email dispatching, push notifications, or scheduled report generation).
+  - **Active Redis 7 Usage**:
+    - **Cross-Node Chat Pub/Sub**: Powers `@socket.io/redis-adapter` across `chat-service-1` and `chat-service-2` to synchronize real-time messages across server instances.
+    - **Database Write Throttling**: Used in the Core Service's authentication middleware with a 5-minute TTL (`la:<userId>`) to throttle PostgreSQL user activity updates.
+    - *(Note: Redis is currently not used to cache entity queries like profiles or boards; those are handled directly by PostgreSQL via Prisma ORM).*
 
 ---
 
@@ -282,9 +295,10 @@ graph TD
 | **Recommendation Service** | `synapse-recommendation-service` | `5001` | `5000` | Python FastAPI Vector Matching Engine |
 | **Chat Service 1** | `synapse-chat-service-1` | `4001` | `4001` | Real-Time Chat Microservice Instance 1 |
 | **Chat Service 2** | `synapse-chat-service-2` | `4002` | `4002` | Real-Time Chat Microservice Instance 2 |
-| **Primary Database** | `synapse-postgres` | `5432` | `5432` | Relational PostgreSQL Database |
+| **Primary Database** | `synapse-postgres` | `5432` | `5432` | Relational PostgreSQL Database (Prisma Managed) |
 | **Vector Database** | `synapse-vectordb` | `5433` | `5432` | Dedicated pgvector Database |
-| **Redis** | `synapse-redis` | `6379` | `6379` | Cache, Pub/Sub Adapter & BullMQ Queue |
+| **Redis** | `synapse-redis` | `6379` | `6379` | Socket.IO Pub/Sub Adapter & Activity Throttling Key Store |
+| **Background Worker** | `synapse-worker` | `-` | `-` | BullMQ Worker (Idle / Reserved for future async jobs) |
 
 ---
 
@@ -386,10 +400,11 @@ cd client
 npm run build
 ```
 
-### Rebuild Backend Core Service
+### Rebuild Backend Core Service & Prisma Client
 ```bash
 cd server
-npm run build
+npm run prisma:generate  # Re-generate Prisma Client from prisma/schema.prisma
+npm run build            # Compile TypeScript into dist/
 ```
 
 ### Rebuild Chat Microservice

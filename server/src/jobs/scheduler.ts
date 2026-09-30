@@ -1,8 +1,10 @@
 
 
+import { setupMaintenanceScheduler } from './maintenance.js';
+
 async function setupSchedulers() {
   console.log('Setting up job schedulers...');
-  // Recommendation computations are handled on-demand by Python vector microservice.
+  await setupMaintenanceScheduler();
   console.log('Job schedulers configured.');
 }
 

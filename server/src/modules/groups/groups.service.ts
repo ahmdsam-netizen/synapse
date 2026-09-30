@@ -1,408 +1,433 @@
-import { query, getClient } from '../../config/database.js';
+import { prisma } from '../../config/prisma.js';
 import { NotFoundError, ForbiddenError, BadRequestError, ConflictError } from '../../utils/errors.js';
+import { scheduleGroupExpiration, cancelGroupExpiration } from '../../jobs/maintenance.js';
 
 export const createGroup = async (userId: string, collegeId: string | null, data: any) => {
-  const client = await getClient();
-  try {
-    await client.query('BEGIN');
-    
-    const groupCollegeId = data.visibility === 'college' ? collegeId : null;
-    const durationDays = [1, 7, 15, 30].includes(Number(data.durationDays)) ? Number(data.durationDays) : 7;
-    
-    const { rows: groupRows } = await client.query(
-      `INSERT INTO groups (name, description, creator_id, college_id, visibility, max_members, expires_at)
-       VALUES ($1, $2, $3, $4, $5, $6, NOW() + ($7 || ' days')::INTERVAL) RETURNING *`,
-      [data.name, data.description, userId, groupCollegeId, data.visibility, data.maxMembers ? Math.min(Number(data.maxMembers), 8) : 8, durationDays.toString()]
-    );
-    
-    const group = groupRows[0];
-    
-    await client.query(
-      `INSERT INTO group_members (group_id, user_id, role) VALUES ($1, $2, 'admin')`,
-      [group.id, userId]
-    );
-    
-    await client.query('COMMIT');
+  const groupCollegeId = data.visibility === 'college' ? collegeId : null;
+  const durationDays = [1, 7, 15, 30].includes(Number(data.durationDays)) ? Number(data.durationDays) : 7;
+  const expiresAt = new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000);
+
+  const result = await prisma.$transaction(async (tx) => {
+    const group = await tx.group.create({
+      data: {
+        name: data.name,
+        description: data.description,
+        creatorId: userId,
+        collegeId: groupCollegeId,
+        visibility: data.visibility || 'global',
+        maxMembers: data.maxMembers ? Math.min(Number(data.maxMembers), 8) : 8,
+        expiresAt,
+      },
+    });
+
+    await tx.groupMember.create({
+      data: {
+        groupId: group.id,
+        userId,
+        role: 'admin',
+      },
+    });
+
     return {
       ...group,
-      expiresAt: group.expires_at,
-      expires_at: group.expires_at,
+      expiresAt: group.expiresAt,
+      expires_at: group.expiresAt,
     };
-  } catch (err) {
-    await client.query('ROLLBACK');
-    throw err;
-  } finally {
-    client.release();
-  }
+  });
+
+  await scheduleGroupExpiration(result.id, expiresAt);
+
+  return result;
 };
 
 export const getMyGroups = async (userId: string) => {
-  const { rows } = await query(
-    `SELECT g.*, gm.role,
-            (SELECT COUNT(*) FROM group_members WHERE group_id = g.id) as member_count,
-            CASE WHEN gm.role = 'admin' THEN
-              (SELECT COUNT(*) FROM join_requests jr WHERE jr.group_id = g.id AND jr.status = 'pending')
-            ELSE 0 END as pending_request_count
-     FROM groups g
-     JOIN group_members gm ON gm.group_id = g.id AND gm.user_id = $1
-     WHERE (g.is_community IS FALSE OR g.is_community IS NULL)
-       AND (g.expires_at IS NULL OR g.expires_at > NOW())
-     ORDER BY gm.joined_at DESC`,
-    [userId]
-  );
-  return rows.map(r => ({
-    ...r,
-    expiresAt: r.expires_at,
-    expires_at: r.expires_at,
+  const memberships = await prisma.groupMember.findMany({
+    where: {
+      userId,
+      group: {
+        isCommunity: false,
+        OR: [
+          { expiresAt: null },
+          { expiresAt: { gt: new Date() } },
+        ],
+      },
+    },
+    include: {
+      group: {
+        include: {
+          _count: {
+            select: {
+              members: true,
+              joinRequests: {
+                where: { status: 'pending' },
+              },
+            },
+          },
+        },
+      },
+    },
+    orderBy: { joinedAt: 'desc' },
+  });
+
+  return memberships.map((m) => ({
+    id: m.group.id,
+    name: m.group.name,
+    description: m.group.description,
+    creator_id: m.group.creatorId,
+    college_id: m.group.collegeId,
+    visibility: m.group.visibility,
+    max_members: m.group.maxMembers,
+    status: m.group.status,
+    is_community: m.group.isCommunity,
+    created_at: m.group.createdAt,
+    expiresAt: m.group.expiresAt,
+    expires_at: m.group.expiresAt,
+    role: m.role,
+    member_count: m.group._count.members,
+    pending_request_count: m.role === 'admin' ? m.group._count.joinRequests : 0,
   }));
 };
 
 export const getGroupDetail = async (groupId: string, viewerId: string) => {
-  const { rows: groupRows } = await query(
-    `SELECT * FROM groups WHERE id = $1 AND (expires_at IS NULL OR expires_at > NOW())`,
-    [groupId]
-  );
-  if (!groupRows.length) throw new NotFoundError('Group not found or has expired');
-  const group = groupRows[0];
+  const group = await prisma.group.findFirst({
+    where: {
+      id: groupId,
+      OR: [
+        { expiresAt: null },
+        { expiresAt: { gt: new Date() } },
+      ],
+    },
+    include: {
+      members: {
+        include: {
+          user: {
+            select: { id: true, name: true, avatarUrl: true },
+          },
+        },
+        orderBy: { joinedAt: 'asc' },
+      },
+      postings: {
+        where: {
+          status: 'open',
+          OR: [
+            { expiresAt: null },
+            { expiresAt: { gt: new Date() } },
+          ],
+        },
+        orderBy: { createdAt: 'desc' },
+      },
+    },
+  });
 
-  const { rows: memberRows } = await query(
-    `SELECT u.id, u.name, u.avatar_url, gm.role, gm.joined_at 
-     FROM group_members gm
-     JOIN users u ON u.id = gm.user_id
-     WHERE gm.group_id = $1
-     ORDER BY gm.joined_at ASC`,
-    [groupId]
-  );
-  
-  const viewerMember = memberRows.find((m: any) => m.id === viewerId);
+  if (!group) throw new NotFoundError('Group not found or has expired');
 
-  const members = memberRows.map((m: any) => ({
-    id: m.id,
-    name: m.name,
-    avatarUrl: m.avatar_url,
-    avatar_url: m.avatar_url,
+  const viewerMember = group.members.find((m) => m.userId === viewerId);
+
+  const members = group.members.map((m) => ({
+    id: m.user.id,
+    name: m.user.name,
+    avatarUrl: m.user.avatarUrl,
+    avatar_url: m.user.avatarUrl,
     role: m.role,
-    joinedAt: m.joined_at,
-    joined_at: m.joined_at,
+    joinedAt: m.joinedAt,
+    joined_at: m.joinedAt,
   }));
 
-  const { rows: postingRows } = await query(
-    `SELECT * FROM board_postings 
-     WHERE group_id = $1 AND status = 'open' 
-       AND slots_filled < slots_total 
-       AND (expires_at IS NULL OR expires_at > NOW()) 
-     ORDER BY created_at DESC`,
-    [groupId]
+  const activePostings = group.postings.filter(
+    (p) => (p.slotsFilled ?? 0) < p.slotsTotal
   );
 
   return {
-    ...group,
-    expiresAt: group.expires_at,
-    expires_at: group.expires_at,
+    id: group.id,
+    name: group.name,
+    description: group.description,
+    creator_id: group.creatorId,
+    college_id: group.collegeId,
+    visibility: group.visibility,
+    max_members: group.maxMembers,
+    status: group.status,
+    is_community: group.isCommunity,
+    created_at: group.createdAt,
+    expiresAt: group.expiresAt,
+    expires_at: group.expiresAt,
     viewerRole: viewerMember ? viewerMember.role : null,
     members,
-    postings: postingRows
+    postings: activePostings.map((p) => ({
+      id: p.id,
+      group_id: p.groupId,
+      board_type: p.boardType,
+      title: p.title,
+      description: p.description,
+      roles_needed: p.rolesNeeded,
+      required_skill_ids: p.requiredSkillIds,
+      required_interest_ids: p.requiredInterestIds,
+      slots_total: p.slotsTotal,
+      slots_filled: p.slotsFilled,
+      community: p.community,
+      status: p.status,
+      created_at: p.createdAt,
+      expires_at: p.expiresAt,
+    })),
   };
 };
 
 export const updateGroup = async (groupId: string, userId: string, data: any) => {
-  const { rows: roleRows } = await query(
-    `SELECT role FROM group_members WHERE group_id = $1 AND user_id = $2`,
-    [groupId, userId]
-  );
-  if (!roleRows.length || roleRows[0].role !== 'admin') {
+  const membership = await prisma.groupMember.findUnique({
+    where: {
+      groupId_userId: { groupId, userId },
+    },
+  });
+
+  if (!membership || membership.role !== 'admin') {
     throw new ForbiddenError('Only admins can update group');
   }
 
-  const updates = [];
-  const params = [];
-  let paramIndex = 1;
-
-  const mapping: Record<string, string> = {
-    name: 'name',
-    description: 'description',
-    visibility: 'visibility',
-    maxMembers: 'max_members',
-    max_members: 'max_members',
-    status: 'status',
-  };
-
-  for (const [key, value] of Object.entries(data)) {
-    if (mapping[key] !== undefined && value !== undefined) {
-      updates.push(`"${mapping[key]}" = $${paramIndex}`);
-      params.push(value);
-      paramIndex++;
-    }
+  const updateData: Record<string, any> = {};
+  if (data.name !== undefined) updateData.name = data.name;
+  if (data.description !== undefined) updateData.description = data.description;
+  if (data.visibility !== undefined) updateData.visibility = data.visibility;
+  if (data.maxMembers !== undefined || data.max_members !== undefined) {
+    updateData.maxMembers = Number(data.maxMembers ?? data.max_members);
   }
+  if (data.status !== undefined) updateData.status = data.status;
 
-  if (updates.length === 0) return { id: groupId };
+  if (Object.keys(updateData).length === 0) return { id: groupId };
 
-  params.push(groupId);
-  const { rows } = await query(
-    `UPDATE groups SET ${updates.join(', ')} WHERE id = $${paramIndex} RETURNING *`,
-    params
-  );
-  
-  return rows[0];
+  return prisma.group.update({
+    where: { id: groupId },
+    data: updateData,
+  });
 };
 
 export const removeMember = async (groupId: string, targetUserId: string, actingUserId: string) => {
   if (targetUserId !== actingUserId) {
-    const { rows: roleRows } = await query(
-      `SELECT role FROM group_members WHERE group_id = $1 AND user_id = $2`,
-      [groupId, actingUserId]
-    );
-    if (!roleRows.length || roleRows[0].role !== 'admin') {
+    const actingMember = await prisma.groupMember.findUnique({
+      where: { groupId_userId: { groupId, userId: actingUserId } },
+    });
+    if (!actingMember || actingMember.role !== 'admin') {
       throw new ForbiddenError('Only admins can remove members');
     }
   }
 
-  const { rows: adminRows } = await query(
-    `SELECT COUNT(*) FROM group_members WHERE group_id = $1 AND role = 'admin'`,
-    [groupId]
-  );
-  
-  const { rows: targetRoleRows } = await query(
-    `SELECT role FROM group_members WHERE group_id = $1 AND user_id = $2`,
-    [groupId, targetUserId]
-  );
+  const adminCount = await prisma.groupMember.count({
+    where: { groupId, role: 'admin' },
+  });
 
-  if (targetRoleRows.length && targetRoleRows[0].role === 'admin' && parseInt(adminRows[0].count) <= 1) {
+  const targetMember = await prisma.groupMember.findUnique({
+    where: { groupId_userId: { groupId, userId: targetUserId } },
+  });
+
+  if (targetMember && targetMember.role === 'admin' && adminCount <= 1) {
     throw new BadRequestError('Cannot remove the last admin');
   }
 
-  await query(
-    `DELETE FROM group_members WHERE group_id = $1 AND user_id = $2`,
-    [groupId, targetUserId]
-  );
-  
+  await prisma.groupMember.delete({
+    where: { groupId_userId: { groupId, userId: targetUserId } },
+  });
+
   return { success: true };
 };
 
 export const promoteMember = async (groupId: string, targetUserId: string, actingUserId: string) => {
-  const { rows: roleRows } = await query(
-    `SELECT role FROM group_members WHERE group_id = $1 AND user_id = $2`,
-    [groupId, actingUserId]
-  );
-  if (!roleRows.length || roleRows[0].role !== 'admin') {
+  const actingMember = await prisma.groupMember.findUnique({
+    where: { groupId_userId: { groupId, userId: actingUserId } },
+  });
+  if (!actingMember || actingMember.role !== 'admin') {
     throw new ForbiddenError('Only admins can promote members');
   }
 
-  await query(
-    `UPDATE group_members SET role = 'admin' WHERE group_id = $1 AND user_id = $2`,
-    [groupId, targetUserId]
-  );
+  await prisma.groupMember.update({
+    where: { groupId_userId: { groupId, userId: targetUserId } },
+    data: { role: 'admin' },
+  });
 
   return { success: true };
 };
 
-export const inviteUser = async (groupId: string, inviterId: string, inviteeId: string, note?: string) => {
+export const inviteUser = async (
+  groupId: string,
+  inviterId: string,
+  inviteeId: string,
+  note?: string
+) => {
   if (inviterId === inviteeId) {
     throw new BadRequestError('You cannot invite yourself to a group');
   }
 
-  // 1. Verify caller is an admin of the group
-  const { rows: roleRows } = await query(
-    `SELECT role FROM group_members WHERE group_id = $1 AND user_id = $2`,
-    [groupId, inviterId]
-  );
-  if (!roleRows.length || roleRows[0].role !== 'admin') {
+  // 1. Verify caller is an admin
+  const inviterMember = await prisma.groupMember.findUnique({
+    where: { groupId_userId: { groupId, userId: inviterId } },
+  });
+  if (!inviterMember || inviterMember.role !== 'admin') {
     throw new ForbiddenError('Only group admins can send invitations');
   }
 
   // 2. Check if group exists and is open
-  const { rows: groupRows } = await query(
-    `SELECT id, name, max_members, status FROM groups WHERE id = $1`,
-    [groupId]
-  );
-  if (!groupRows.length) {
-    throw new NotFoundError('Group not found');
-  }
-  const group = groupRows[0];
+  const group = await prisma.group.findUnique({
+    where: { id: groupId },
+    include: {
+      _count: { select: { members: true } },
+    },
+  });
+  if (!group) throw new NotFoundError('Group not found');
   if (group.status === 'closed') {
     throw new BadRequestError('Group is closed for new members');
   }
 
-  // 3. Check group member count vs max_members
-  const { rows: countRows } = await query(
-    `SELECT COUNT(*)::int as count FROM group_members WHERE group_id = $1`,
-    [groupId]
-  );
-  if (countRows[0].count >= group.max_members) {
+  // 3. Check group member count vs maxMembers
+  if (group._count.members >= (group.maxMembers ?? 10)) {
     throw new BadRequestError('Group has reached maximum member capacity');
   }
 
-  // 4. Check if invitee exists and whether they are open to invites
-  const { rows: userRows } = await query(
-    `SELECT id, name, COALESCE(open_to_invites, TRUE) as open_to_invites FROM users WHERE id = $1`,
-    [inviteeId]
-  );
-  if (!userRows.length) {
-    throw new NotFoundError('User not found');
-  }
-  if (!userRows[0].open_to_invites) {
-    throw new ForbiddenError(`${userRows[0].name} is not currently accepting group invitations`);
+  // 4. Check if invitee exists and whether open to invites
+  const invitee = await prisma.user.findUnique({
+    where: { id: inviteeId },
+    select: { id: true, name: true, openToInvites: true },
+  });
+  if (!invitee) throw new NotFoundError('User not found');
+  if (!invitee.openToInvites) {
+    throw new ForbiddenError(`${invitee.name} is not currently accepting group invitations`);
   }
 
   // 5. Check if already a member
-  const { rows: existingMemberRows } = await query(
-    `SELECT 1 FROM group_members WHERE group_id = $1 AND user_id = $2`,
-    [groupId, inviteeId]
-  );
-  if (existingMemberRows.length) {
+  const isMember = await prisma.groupMember.findUnique({
+    where: { groupId_userId: { groupId, userId: inviteeId } },
+  });
+  if (isMember) {
     throw new ConflictError('User is already a member of this group');
   }
 
   // 6. Check if pending invite already exists
-  const { rows: existingInviteRows } = await query(
-    `SELECT id FROM group_invites WHERE group_id = $1 AND invitee_id = $2 AND status = 'pending'`,
-    [groupId, inviteeId]
-  );
-  if (existingInviteRows.length) {
+  const existingInvite = await prisma.groupInvite.findFirst({
+    where: { groupId, inviteeId, status: 'pending' },
+  });
+  if (existingInvite) {
     throw new ConflictError('An invitation is already pending for this user');
   }
 
   // 7. Insert invite
-  const { rows: inviteRows } = await query(
-    `INSERT INTO group_invites (group_id, inviter_id, invitee_id, note, status)
-     VALUES ($1, $2, $3, $4, 'pending')
-     RETURNING *`,
-    [groupId, inviterId, inviteeId, note?.trim() || null]
-  );
-
-  return inviteRows[0];
+  return prisma.groupInvite.create({
+    data: {
+      groupId,
+      inviterId,
+      inviteeId,
+      note: note?.trim() || null,
+      status: 'pending',
+    },
+  });
 };
 
 export const getMyInvites = async (userId: string) => {
-  const { rows } = await query(
-    `SELECT gi.id, gi.group_id, gi.inviter_id, gi.invitee_id, gi.note, gi.status, gi.created_at, gi.updated_at,
-            g.name as group_name, g.description as group_description, g.status as group_status,
-            u.name as inviter_name, u.avatar_url as inviter_avatar_url,
-            c.name as college_name
-     FROM group_invites gi
-     JOIN groups g ON g.id = gi.group_id
-     JOIN users u ON u.id = gi.inviter_id
-     LEFT JOIN colleges c ON c.id = g.college_id
-     WHERE gi.invitee_id = $1
-     ORDER BY (gi.status = 'pending') DESC, gi.created_at DESC`,
-    [userId]
-  );
+  const invites = await prisma.groupInvite.findMany({
+    where: { inviteeId: userId },
+    include: {
+      group: {
+        include: { college: true },
+      },
+      inviter: true,
+    },
+    orderBy: [{ status: 'desc' }, { createdAt: 'desc' }],
+  });
 
-  return rows.map((r: any) => ({
-    id: r.id,
-    groupId: r.group_id,
-    groupName: r.group_name,
-    groupDescription: r.group_description,
-    groupStatus: r.group_status,
-    inviterId: r.inviter_id,
-    inviterName: r.inviter_name,
-    inviterAvatarUrl: r.inviter_avatar_url,
-    collegeName: r.college_name,
-    note: r.note,
-    status: r.status,
-    createdAt: r.created_at,
-    updatedAt: r.updated_at,
+  return invites.map((gi) => ({
+    id: gi.id,
+    groupId: gi.groupId,
+    groupName: gi.group.name,
+    groupDescription: gi.group.description,
+    groupStatus: gi.group.status,
+    inviterId: gi.inviterId,
+    inviterName: gi.inviter.name,
+    inviterAvatarUrl: gi.inviter.avatarUrl,
+    collegeName: gi.group.college?.name || null,
+    note: gi.note,
+    status: gi.status,
+    createdAt: gi.createdAt,
+    updatedAt: gi.updatedAt,
   }));
 };
 
 export const acceptInvite = async (inviteId: string, userId: string) => {
-  const client = await getClient();
-  try {
-    await client.query('BEGIN');
-
-    const { rows: inviteRows } = await client.query(
-      `SELECT * FROM group_invites WHERE id = $1 AND invitee_id = $2 AND status = 'pending' FOR UPDATE`,
-      [inviteId, userId]
-    );
-
-    if (!inviteRows.length) {
+  return prisma.$transaction(async (tx) => {
+    const invite = await tx.groupInvite.findFirst({
+      where: { id: inviteId, inviteeId: userId, status: 'pending' },
+    });
+    if (!invite) {
       throw new NotFoundError('Invitation not found or already processed');
     }
-    const invite = inviteRows[0];
 
-    // Check group capacity
-    const { rows: groupRows } = await client.query(
-      `SELECT id, name, max_members, status FROM groups WHERE id = $1 FOR UPDATE`,
-      [invite.group_id]
-    );
-    if (!groupRows.length) {
-      throw new NotFoundError('Group not found');
-    }
-    const group = groupRows[0];
+    const group = await tx.group.findUnique({
+      where: { id: invite.groupId },
+      include: { _count: { select: { members: true } } },
+    });
+    if (!group) throw new NotFoundError('Group not found');
     if (group.status === 'closed') {
       throw new BadRequestError('Group is closed for new members');
     }
-
-    const { rows: countRows } = await client.query(
-      `SELECT COUNT(*)::int as count FROM group_members WHERE group_id = $1`,
-      [invite.group_id]
-    );
-    if (countRows[0].count >= group.max_members) {
+    if (group._count.members >= (group.maxMembers ?? 10)) {
       throw new BadRequestError('Group has reached maximum member capacity');
     }
 
-    // Add user as member
-    await client.query(
-      `INSERT INTO group_members (group_id, user_id, role)
-       VALUES ($1, $2, 'member')
-       ON CONFLICT (group_id, user_id) DO NOTHING`,
-      [invite.group_id, userId]
-    );
+    await tx.groupMember.upsert({
+      where: { groupId_userId: { groupId: invite.groupId, userId } },
+      update: {},
+      create: {
+        groupId: invite.groupId,
+        userId,
+        role: 'member',
+      },
+    });
 
-    // Update invite status
-    const { rows: updatedRows } = await client.query(
-      `UPDATE group_invites SET status = 'accepted', updated_at = NOW() WHERE id = $1 RETURNING *`,
-      [inviteId]
-    );
-
-    await client.query('COMMIT');
-    return updatedRows[0];
-  } catch (err) {
-    await client.query('ROLLBACK');
-    throw err;
-  } finally {
-    client.release();
-  }
+    return tx.groupInvite.update({
+      where: { id: inviteId },
+      data: {
+        status: 'accepted',
+        updatedAt: new Date(),
+      },
+    });
+  });
 };
 
 export const declineInvite = async (inviteId: string, userId: string) => {
-  const { rows } = await query(
-    `UPDATE group_invites SET status = 'declined', updated_at = NOW()
-     WHERE id = $1 AND invitee_id = $2 AND status = 'pending'
-     RETURNING *`,
-    [inviteId, userId]
-  );
-
-  if (!rows.length) {
+  const invite = await prisma.groupInvite.findFirst({
+    where: { id: inviteId, inviteeId: userId, status: 'pending' },
+  });
+  if (!invite) {
     throw new NotFoundError('Invitation not found or already processed');
   }
 
-  return rows[0];
+  return prisma.groupInvite.update({
+    where: { id: inviteId },
+    data: {
+      status: 'declined',
+      updatedAt: new Date(),
+    },
+  });
 };
 
 export const deleteGroup = async (groupId: string, userId: string) => {
-  const { rows: groupRows } = await query(
-    `SELECT creator_id FROM groups WHERE id = $1`,
-    [groupId]
-  );
-  if (!groupRows.length) {
-    throw new NotFoundError('Group not found');
-  }
+  const group = await prisma.group.findUnique({
+    where: { id: groupId },
+    select: { creatorId: true },
+  });
+  if (!group) throw new NotFoundError('Group not found');
 
-  const { rows: roleRows } = await query(
-    `SELECT role FROM group_members WHERE group_id = $1 AND user_id = $2`,
-    [groupId, userId]
-  );
+  const member = await prisma.groupMember.findUnique({
+    where: { groupId_userId: { groupId, userId } },
+    select: { role: true },
+  });
 
-  const isCreator = groupRows[0].creator_id === userId;
-  const isAdmin = roleRows.length > 0 && roleRows[0].role === 'admin';
+  const isCreator = group.creatorId === userId;
+  const isAdmin = member?.role === 'admin';
 
   if (!isAdmin && !isCreator) {
     throw new ForbiddenError('Only group admins or the group creator can delete this group');
   }
 
-  await query(`DELETE FROM groups WHERE id = $1`, [groupId]);
+  await prisma.group.delete({
+    where: { id: groupId },
+  });
+
+  cancelGroupExpiration(groupId).catch(() => {});
+
   return { success: true };
 };
-
-

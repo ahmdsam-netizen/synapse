@@ -3,7 +3,7 @@ import jwt from 'jsonwebtoken';
 import { AuthRequest } from '../types/index.js';
 import { env } from '../config/env.js';
 import { redis } from '../config/redis.js';
-import { query } from '../config/database.js';
+import { prisma } from '../config/prisma.js';
 import { UnauthorizedError } from '../utils/errors.js';
 
 export const requireAuth = async (req: AuthRequest, res: Response, next: NextFunction) => {
@@ -50,7 +50,10 @@ export const requireAuth = async (req: AuthRequest, res: Response, next: NextFun
     const exists = await redis.exists(redisKey);
     
     if (!exists) {
-      await query(`UPDATE users SET last_active = NOW() WHERE id = $1`, [payload.id]);
+      await prisma.user.update({
+        where: { id: payload.id },
+        data: { lastActive: new Date() },
+      });
       await redis.set(redisKey, '1', 'EX', 300); // 300 seconds TTL = 5 minutes
     }
 
