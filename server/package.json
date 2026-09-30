@@ -10,7 +10,6 @@
     "prestart": "npm run migrate",
     "start": "node dist/index.js",
     "seed": "tsx scripts/seed.ts",
-    "worker": "tsx src/jobs/worker.ts",
     "prisma:generate": "prisma generate",
     "postinstall": "prisma generate",
     "typecheck": "tsc --noEmit"

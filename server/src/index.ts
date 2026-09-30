@@ -11,7 +11,6 @@ import searchRoutes from './modules/search/search.routes.js';
 import groupRoutes from './modules/groups/groups.routes.js';
 import boardRoutes from './modules/boards/boards.routes.js';
 import communityRoutes from './modules/communities/communities.routes.js';
-import { initMaintenance } from './jobs/maintenance.js';
 
 const app = express();
 
@@ -110,11 +109,6 @@ app.get('/api/internal/second-degree-candidates/:userId', requireInternalSecret,
 
 // Error handler (must be last)
 app.use(errorHandler);
-
-// Background maintenance jobs with BullMQ (distributed repeatable schedules)
-initMaintenance().catch((err: any) => {
-  console.error('[Maintenance] Failed to initialize BullMQ maintenance jobs:', err.message);
-});
 
 app.listen(env.PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${env.PORT} in ${env.NODE_ENV} mode`);

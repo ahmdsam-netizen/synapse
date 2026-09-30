@@ -78,6 +78,28 @@ services:
       - /app/node_modules
     command: sh -c "npm run migrate && npm run seed && npm run dev"
 
+  job-service:
+    build:
+      context: ./job-service
+      dockerfile: Dockerfile
+    image: synapse-job-service:latest
+    container_name: synapse-job-service
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql://synapse:synapse_dev@postgres:5432/synapse}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      NODE_ENV: ${NODE_ENV:-development}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      core-service:
+        condition: service_started
+    volumes:
+      - ./job-service:/app
+      - /app/node_modules
+    command: npm run dev
+
   recommendation-service:
     build:
       context: ./recommendation-service
