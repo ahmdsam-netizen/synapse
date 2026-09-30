@@ -18,10 +18,10 @@ graph TD
     RecService["Recommendation Microservice<br/>Python 3.11 - FastAPI<br/>Host Port: 5001"]
     Chat1["Chat Microservice Instance 1<br/>Socket.IO - TypeScript<br/>Port: 4001"]
     Chat2["Chat Microservice Instance 2<br/>Socket.IO - TypeScript<br/>Port: 4002"]
+    JobService["Job Service (Background Worker)<br/>BullMQ Worker & Cron - pg Pool<br/>Container: job-service"]
     PrimaryDB[("Primary Database<br/>PostgreSQL 16 (Prisma Schema)<br/>Port: 5432")]
     VectorDB[("Dedicated Vector DB<br/>pgvector HNSW<br/>Port: 5433")]
-    RedisCache[("Redis 7<br/>Socket.IO Pub/Sub & Activity Throttling<br/>Port: 6379")]
-    Worker["Background Worker<br/>BullMQ (Idle / Legacy Stub)"]
+    RedisCache[("Redis 7<br/>BullMQ Queues & Socket.IO Pub/Sub<br/>Port: 6379")]
 
     Client -->|"HTTP / REST Requests"| Gateway
     Client -->|"WebSocket Handshakes (/socket.io)"| Gateway
@@ -32,7 +32,11 @@ graph TD
     Gateway -->|"Consistent Hash Affinity (userId -> Node)<br/>WebSockets & REST (/socket.io, /api/chat)"| Chat2
 
     CoreService -->|"Prisma Client & Graph Queries"| PrimaryDB
+    CoreService -->|"Enqueues Expiration Timers (BullMQ)"| RedisCache
     CoreService -->|"User Activity Throttling (5-min TTL)"| RedisCache
+
+    JobService <-->|"Consumes Scheduled & Delayed Jobs"| RedisCache
+    JobService -->|"Direct Parameterized SQL Deletions"| PrimaryDB
 
     Chat1 -->|"Persist Messages (group_messages)"| PrimaryDB
     Chat2 -->|"Persist Messages (group_messages)"| PrimaryDB
@@ -41,8 +45,6 @@ graph TD
 
     RecService -->|"Sub-Millisecond HNSW Cosine Search"| VectorDB
     RecService -.->|"Internal Data Sync: /api/internal/*"| CoreService
-
-    Worker -.->|"Idle Queue Listener (Superseded by Python Service)"| RedisCache
 ```
 
 ### 2. Structural Component & Data Flow Map
@@ -78,15 +80,22 @@ graph TD
 | - Groups & Communities|     |                       |     |                                   |
 +-----------------------+     +-----------------------+     +-----------------------------------+
         |          \                      |                         |                 |
-        |           \                     |                         |                 |
+        |           \ (BullMQ Producer)   |                         |                 |
         v            v                    v                         v                 v
 +---------------+  +--------------------+  +--------------------+  +--------------------+
 |  PRIMARY DB   |  |    REDIS 7         |  |     VECTOR DB      |  |  POSTGRES DB       |
 | PostgreSQL 16 |  |    Port: 6379      |  |   pgvector / PG16  |  | Table:             |
 | Managed by    |  | - Socket.IO Pub/Sub|  |   Port: 5433       |  | group_messages     |
 | Prisma ORM    |  | - Activity Throttle|  | 384-d Embeddings   |  | Relational Cascade |
-| Port: 5432    |  | - (BullMQ: Idle)   |  | HNSW Cosine Index  |  | Chat History       |
+| Port: 5432    |  | - BullMQ Timers/Q  |  | HNSW Cosine Index  |  | Chat History       |
 +---------------+  +--------------------+  +--------------------+  +--------------------+
+        ^                    |
+        | SQL Deletions      | BullMQ Consumer
++---------------------------------------+
+|             JOB SERVICE               |
+| Standalone Worker, pg Pool, Cron      |
+| Exact Second Expirations & Cleanups   |
++---------------------------------------+
 ```
 
 ---
@@ -226,22 +235,31 @@ graph TD
 
 ---
 
-### 7. Background Worker & Redis (`synapse-worker` & `synapse-redis`)
-- **Technology**: Redis 7, BullMQ
-- **Port**: `6379`
+### 7. Standalone Job Service (`job-service/`)
+- **Technology**: Node.js, TypeScript, BullMQ v6, PostgreSQL (`pg` Connection Pool)
+- **Container**: `synapse-job-service` (Internal microservice)
 - **Role & Operations**:
-  - **Worker Status (BullMQ - Idle / Legacy Stub)**:
-    - Originally built for asynchronous recommendation calculation in Node.js.
-    - Since vector embeddings and semantic matching have been migrated to the dedicated Python FastAPI microservice (`recommendation-service`), the BullMQ recommendation queue is currently idle.
-    - The worker process is maintained as a reserved background runner for future non-ML async jobs (such as email dispatching, push notifications, or scheduled report generation).
-  - **Active Redis 7 Usage**:
-    - **Cross-Node Chat Pub/Sub**: Powers `@socket.io/redis-adapter` across `chat-service-1` and `chat-service-2` to synchronize real-time messages across server instances.
-    - **Database Write Throttling**: Used in the Core Service's authentication middleware with a 5-minute TTL (`la:<userId>`) to throttle PostgreSQL user activity updates.
-    - *(Note: Redis is currently not used to cache entity queries like profiles or boards; those are handled directly by PostgreSQL via Prisma ORM).*
+  - **Decoupled Architecture**: Completely extracts all background tasks, database cleanup routines, and delayed timers out of the Express API server (`server/`).
+  - **Single Source of Truth (Zero Schema Duplication)**: Directly connects to PostgreSQL via a connection pool (`pg.Pool`) without maintaining duplicate Prisma schemas or ORM overhead.
+  - **Exact-Second Expiration Deletion**: Consumes delayed jobs (`delete-single-posting`, `delete-single-group`) enqueued by the Core Service, deleting expired records on the exact second their lifetime ends.
+  - **Distributed Cron Schedulers**: Registers repeatable BullMQ v6 Job Schedulers in Redis:
+    - `cleanup-postings-scheduler`: Runs every 10 minutes (`*/10 * * * *`) as a fallback sweep for expired board postings.
+    - `cleanup-groups-scheduler`: Runs every 1 hour (`0 * * * *`) as a fallback sweep for expired student project groups (cascading members, invitations, and chat history while preserving permanent communities).
+  - **Graceful Lifecycle Management**: Listens for `SIGTERM` and `SIGINT` to cleanly close active BullMQ workers and drain the database connection pool before exiting.
 
 ---
 
-### 8. React Web Client (`client/`)
+### 8. Redis 7 Key-Value Store & Message Broker (`synapse-redis`)
+- **Technology**: Redis 7 Alpine
+- **Port**: `6379`
+- **Role & Operations**:
+  - **BullMQ Distributed Queue & Delayed Job Storage**: Stores delayed expiration timers in Redis Sorted Sets (`ZSET`) and manages distributed repeatable cron schedulers for `job-service`.
+  - **Cross-Node Chat Pub/Sub**: Powers `@socket.io/redis-adapter` across `chat-service-1` and `chat-service-2` to synchronize real-time messages across server instances.
+  - **Database Write Throttling**: Used in the Core Service's authentication middleware with a 5-minute TTL (`la:<userId>`) to throttle PostgreSQL user activity updates.
+
+---
+
+### 9. React Web Client (`client/`)
 - **Technology**: React 19, Vite 8, TailwindCSS 4, React Router 7, TanStack Query 5, Socket.IO Client
 - **Port**: `5173`
 - **Role & Key Features**:
@@ -298,7 +316,7 @@ graph TD
 | **Primary Database** | `synapse-postgres` | `5432` | `5432` | Relational PostgreSQL Database (Prisma Managed) |
 | **Vector Database** | `synapse-vectordb` | `5433` | `5432` | Dedicated pgvector Database |
 | **Redis** | `synapse-redis` | `6379` | `6379` | Socket.IO Pub/Sub Adapter & Activity Throttling Key Store |
-| **Background Worker** | `synapse-worker` | `-` | `-` | BullMQ Worker (Idle / Reserved for future async jobs) |
+| **Job Service** | `synapse-job-service` | `-` | `-` | Standalone BullMQ Worker, Expiration Timers & Cron Sweeps |
 
 ---
 
@@ -351,7 +369,7 @@ Docker Compose will build and launch:
 6. `synapse-chat-service-1` (Port 4001)
 7. `synapse-chat-service-2` (Port 4002)
 8. `synapse-gateway` (Port 3001)
-9. `synapse-worker` (Background jobs)
+9. `synapse-job-service` (Standalone background jobs & cron sweeps)
 10. `synapse-client` (Port 5173)
 
 ### 2. Access the Application
@@ -392,6 +410,9 @@ docker compose logs core-service --tail 50 -f
 
 # Gateway Logs
 docker compose logs gateway --tail 50 -f
+
+# Job Service Logs
+docker compose logs job-service --tail 50 -f
 ```
 
 ### Rebuild Frontend Client
@@ -404,6 +425,12 @@ npm run build
 ```bash
 cd server
 npm run prisma:generate  # Re-generate Prisma Client from prisma/schema.prisma
+npm run build            # Compile TypeScript into dist/
+```
+
+### Rebuild Standalone Job Service
+```bash
+cd job-service
 npm run build            # Compile TypeScript into dist/
 ```
 
