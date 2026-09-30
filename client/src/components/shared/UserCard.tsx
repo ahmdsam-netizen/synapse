@@ -143,10 +143,6 @@ export function UserCard({
           <div className="mt-3 flex flex-wrap gap-1.5">
             {skills.slice(0, 4).map((s: any, idx: number) => {
               const sName = typeof s === 'string' ? s : s.name;
-              const sId = typeof s === 'string' ? s : s.id || s.name;
-              const isMatched = matchedSkills.some(
-                (ms: any) => ms.id === sId || ms.name === sName
-              );
               return (
                 <TagChip
                   key={idx}

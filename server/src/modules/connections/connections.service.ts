@@ -1,5 +1,4 @@
 import { pool, query, getClient } from '../../config/database.js';
-import { recommendationQueue } from '../../config/queue.js';
 import { NotFoundError, ValidationError, ConflictError } from '../../utils/errors.js';
 import { decodeCursor, buildPaginationResult, PaginationResult } from '../../utils/pagination.js';
 
@@ -82,14 +81,6 @@ export async function acceptConnection(connectionId: string, userId: string) {
 
     await client.query('COMMIT');
 
-    // Enqueue background jobs for both users and batch updates
-    try {
-      await recommendationQueue.add('computeSecondDegree', { userId: requesterId });
-      await recommendationQueue.add('computeSecondDegree', { userId });
-    } catch (qErr) {
-      console.error('Failed to enqueue recommendation job on accept:', qErr);
-    }
-
     return updateRes.rows[0];
   } catch (error) {
     await client.query('ROLLBACK');
@@ -153,15 +144,6 @@ export async function removeConnection(connectionIdOrFriendId: string, userId: s
     }
 
     await client.query('COMMIT');
-
-    if (conn.status === 'accepted') {
-      try {
-        await recommendationQueue.add('computeSecondDegree', { userId: requesterId });
-        await recommendationQueue.add('computeSecondDegree', { userId: receiverId });
-      } catch (qErr) {
-        console.error('Failed to enqueue recommendation job on remove:', qErr);
-      }
-    }
 
     return { removed: true };
   } catch (error) {

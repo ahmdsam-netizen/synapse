@@ -16,7 +16,5 @@ export type Proficiency = 'beginner' | 'intermediate' | 'advanced';
 export type GroupRole = 'admin' | 'member';
 export type GroupVisibility = 'global' | 'college';
 export type GroupStatus = 'open' | 'closed';
-export type BoardType = 'global' | 'matched';
 export type PostingStatus = 'open' | 'closed';
 export type JoinRequestStatus = 'pending' | 'approved' | 'rejected';
-export type RecType = 'second_degree' | 'similarity';

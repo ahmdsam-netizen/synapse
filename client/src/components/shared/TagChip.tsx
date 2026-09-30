@@ -1,4 +1,3 @@
-import React from 'react';
 import { XMarkIcon } from '@heroicons/react/20/solid';
 import { cn } from '../../lib/utils';
 

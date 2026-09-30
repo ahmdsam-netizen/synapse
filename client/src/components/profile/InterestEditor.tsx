@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, ChangeEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { usersApi } from '../../api/users';
 import { useDebounce } from '../../hooks/useDebounce';
@@ -72,13 +72,17 @@ export default function InterestEditor({ interests, isOwnProfile }: InterestEdit
     }
   };
 
-  const debouncedSearch = useDebounce((term: string) => handleSearch(term), 250);
+  const debouncedSearchTerm = useDebounce(searchTerm, 250);
 
-  const onSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  useEffect(() => {
+    handleSearch(debouncedSearchTerm);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedSearchTerm]);
+
+  const onSearchChange = (e: ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
     setSearchTerm(val);
     setErrorMessage(null);
-    debouncedSearch(val);
   };
 
   const resetForm = () => {

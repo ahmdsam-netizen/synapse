@@ -7,7 +7,6 @@ import { errorHandler } from './middleware/errorHandler.js';
 import authRoutes from './modules/auth/auth.routes.js';
 import userRoutes from './modules/users/users.routes.js';
 import connectionRoutes from './modules/connections/connections.routes.js';
-import recommendationRoutes from './modules/recommendations/recommendations.routes.js';
 import searchRoutes from './modules/search/search.routes.js';
 import groupRoutes from './modules/groups/groups.routes.js';
 import boardRoutes from './modules/boards/boards.routes.js';
@@ -32,7 +31,6 @@ app.get('/api/health', (_req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/connections', connectionRoutes);
-app.use('/api/recommendations', recommendationRoutes);
 app.use('/api/search', searchRoutes);
 app.use('/api/groups', groupRoutes);
 app.use('/api/boards', boardRoutes);

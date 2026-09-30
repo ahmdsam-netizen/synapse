@@ -3,7 +3,7 @@ import { requireAuth } from '../../middleware/auth.js';
 import { validate } from '../../middleware/validate.js';
 import { joinRequestLimiter } from '../../middleware/rateLimiter.js';
 import { 
-  globalBoardQuerySchema, matchedBoardQuerySchema, createPostingSchema, 
+  globalBoardQuerySchema, myPostingsQuerySchema, createPostingSchema, 
   updatePostingSchema, postingIdParamSchema, joinRequestSchema, 
   groupRequestsQuerySchema, joinRequestActionParamSchema
 } from './boards.schema.js';
@@ -13,8 +13,7 @@ const router = Router();
 
 router.get('/global', requireAuth, validate(globalBoardQuerySchema, 'query'), boardsController.getGlobalHandler);
 router.get('/college', requireAuth, validate(globalBoardQuerySchema, 'query'), boardsController.getCollegeHandler);
-router.get('/matched', requireAuth, validate(matchedBoardQuerySchema, 'query'), boardsController.getMatchedHandler);
-router.get('/my-postings', requireAuth, validate(matchedBoardQuerySchema, 'query'), boardsController.getMyPostingsHandler);
+router.get('/my-postings', requireAuth, validate(myPostingsQuerySchema, 'query'), boardsController.getMyPostingsHandler);
 router.post('/postings', requireAuth, validate(createPostingSchema), boardsController.createPostingHandler);
 router.get('/postings/:id', requireAuth, validate(postingIdParamSchema, 'params'), boardsController.getPostingHandler);
 router.put('/postings/:id', requireAuth, validate(postingIdParamSchema, 'params'), validate(updatePostingSchema), boardsController.updatePostingHandler);

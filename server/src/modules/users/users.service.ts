@@ -1,5 +1,4 @@
 import { query } from '../../config/database.js';
-import { recommendationQueue } from '../../config/queue.js';
 import { NotFoundError, ConflictError, BadRequestError } from '../../utils/errors.js';
 import { computeCompleteness } from '../../utils/profileCompleteness.js';
 
@@ -181,7 +180,6 @@ export async function addSkill(userId: string, payload: { skillId?: string; name
   );
 
   await recomputeCompleteness(userId);
-  await recommendationQueue.add('computeSimilarity', { userId });
 
   return { 
     id: finalSkillId, 
@@ -197,7 +195,6 @@ export async function removeSkill(userId: string, skillId: string) {
   if (res.rowCount === 0) throw new NotFoundError('Skill not found in user profile');
 
   await recomputeCompleteness(userId);
-  await recommendationQueue.add('computeSimilarity', { userId });
 }
 
 export async function addInterest(userId: string, payload: { interestId?: string; name?: string }) {
@@ -232,7 +229,6 @@ export async function addInterest(userId: string, payload: { interestId?: string
   );
 
   await recomputeCompleteness(userId);
-  await recommendationQueue.add('computeSimilarity', { userId });
 
   return { 
     id: finalInterestId, 
@@ -247,7 +243,6 @@ export async function removeInterest(userId: string, interestId: string) {
   if (res.rowCount === 0) throw new NotFoundError('Interest not found in user profile');
 
   await recomputeCompleteness(userId);
-  await recommendationQueue.add('computeSimilarity', { userId });
 }
 
 export async function createWorkItem(userId: string, data: any) {

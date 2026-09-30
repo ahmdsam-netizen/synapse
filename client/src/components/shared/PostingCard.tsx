@@ -1,4 +1,3 @@
-import React from 'react';
 import { ArrowTopRightOnSquareIcon } from '@heroicons/react/24/outline';
 import { BoardPosting } from '../../types';
 import { TagChip } from './TagChip';

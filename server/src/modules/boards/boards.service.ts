@@ -195,65 +195,6 @@ export const getGlobalBoard = async (cursor: string | undefined, limit: number, 
   return { ...paginated, data: hydrated };
 };
 
-export const getMatchedBoard = async (userId: string, collegeId: string | null, cursor: string | undefined, limit: number, community?: string) => {
-  await cleanExpiredPostings();
-  const params: any[] = [userId, collegeId];
-  let paramIndex = 3;
-
-  let baseQuery = `
-    SELECT bp.*, g.name as group_name, g.college_id,
-           c.name as college_name,
-           COALESCE(skill_overlap.cnt, 0) as matched_skill_count,
-           COALESCE(interest_overlap.cnt, 0) as matched_interest_count,
-           CASE WHEN g.college_id = $2 THEN 1 ELSE 0 END as same_college
-    FROM board_postings bp
-    JOIN groups g ON g.id = bp.group_id
-    LEFT JOIN colleges c ON c.id = g.college_id
-    LEFT JOIN LATERAL (
-      SELECT COUNT(*) as cnt FROM user_skills us
-      WHERE us.user_id = $1 AND us.skill_id = ANY(bp.required_skill_ids)
-    ) skill_overlap ON true
-    LEFT JOIN LATERAL (
-      SELECT COUNT(*) as cnt FROM user_interests ui  
-      WHERE ui.user_id = $1 AND ui.interest_id = ANY(bp.required_interest_ids)
-    ) interest_overlap ON true
-    WHERE bp.status = 'open' AND bp.slots_filled < bp.slots_total
-      AND (bp.expires_at IS NULL OR bp.expires_at > NOW())
-      AND (COALESCE(skill_overlap.cnt, 0) + COALESCE(interest_overlap.cnt, 0)) > 0
-      AND NOT EXISTS (SELECT 1 FROM group_members WHERE group_id = bp.group_id AND user_id = $1)
-  `;
-
-  if (community && community !== 'all') {
-    baseQuery += ` AND bp.community = $${paramIndex}`;
-    params.push(community);
-    paramIndex++;
-  }
-
-  if (cursor) {
-    const decoded = decodeCursor(cursor);
-    if (decoded) {
-      baseQuery += ` AND ((COALESCE(skill_overlap.cnt, 0) + COALESCE(interest_overlap.cnt, 0)) < $${paramIndex} 
-                       OR ((COALESCE(skill_overlap.cnt, 0) + COALESCE(interest_overlap.cnt, 0)) = $${paramIndex} AND same_college < $${paramIndex+1})
-                       OR ((COALESCE(skill_overlap.cnt, 0) + COALESCE(interest_overlap.cnt, 0)) = $${paramIndex} AND same_college = $${paramIndex+1} AND bp.created_at < $${paramIndex+2}))`;
-      params.push(decoded.score, decoded.sameCollege, decoded.createdAt);
-      paramIndex += 3;
-    }
-  }
-
-  baseQuery += ` ORDER BY (COALESCE(skill_overlap.cnt, 0) + COALESCE(interest_overlap.cnt, 0)) DESC, same_college DESC, bp.created_at DESC LIMIT $${paramIndex}`;
-  params.push(limit + 1);
-
-  const { rows } = await query(baseQuery, params);
-
-  const paginated = buildPaginationResult(rows, limit, (item: any) => ({
-    score: Number(item.matched_skill_count) + Number(item.matched_interest_count),
-    sameCollege: item.same_college,
-    createdAt: item.created_at
-  }));
-  const hydrated = await hydrateBoardPostings(paginated.data, userId);
-  return { ...paginated, data: hydrated };
-};
-
 export const getMyPostings = async (userId: string, cursor: string | undefined, limit: number, community?: string) => {
   await cleanExpiredPostings();
   const params: any[] = [userId];

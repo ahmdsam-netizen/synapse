@@ -272,6 +272,7 @@ def get_second_degree_recommendations(
         "source": "similarity"
     }
 
+@app.get("/recommendations/boards")
 @app.get("/boards/matched")
 def get_matched_boards(
     x_user_id: str | None = Header(None, alias="x-user-id"),

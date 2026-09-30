@@ -14,7 +14,7 @@ export function useInfiniteScroll<T>({
   queryFn,
   enabled = true,
 }: UseInfiniteScrollOptions<T>) {
-  const { ref, inView } = useInView({ threshold: 0, rootMargin: '200px' });
+  const { ref } = useInView({ threshold: 0, rootMargin: '200px' });
 
   const query = useInfiniteQuery<PaginatedResponse<T>, Error, InfiniteData<PaginatedResponse<T>>, QueryKey, string | null>({
     queryKey,

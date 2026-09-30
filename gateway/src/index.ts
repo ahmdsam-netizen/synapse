@@ -1,76 +1,27 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
-import dotenv from 'dotenv';
 import jwt from 'jsonwebtoken';
 import { createProxyMiddleware } from 'http-proxy-middleware';
+import { env, CHAT_SERVICE_URLS } from './config/env.js';
 import { ConsistentHashRing } from './hashRing.js';
 
-dotenv.config();
-
 const app = express();
-
-const PORT = parseInt(process.env.PORT || '3001', 10);
-const CORE_SERVICE_URL = process.env.CORE_SERVICE_URL || 'http://localhost:4000';
-const REC_SERVICE_URL = process.env.REC_SERVICE_URL || 'http://localhost:5000';
-const CHAT_SERVICE_URLS = (process.env.CHAT_SERVICE_URLS || 'http://localhost:4001,http://localhost:4002')
-  .split(',')
-  .map((s) => s.trim())
-  .filter(Boolean);
-const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5173';
-
-// C-04 / C-06: Fail fast if JWT_SECRET is not explicitly configured.
-// Never fall back to a hardcoded default — that would allow anyone with
-// source-code access to forge valid tokens for any user.
-const JWT_SECRET = process.env.JWT_SECRET;
-if (!JWT_SECRET || JWT_SECRET.length < 32) {
-  console.error('[Gateway] FATAL: JWT_SECRET env var is missing or shorter than 32 characters. Refusing to start.');
-  process.exit(1);
-}
-
-// C-03 / MED-06: Shared internal secret used to authenticate gateway→service
-// header forwarding. Services will reject x-user-id unless this header is also
-// present and matches their GATEWAY_SECRET env var.
-const GATEWAY_SECRET = process.env.GATEWAY_SECRET;
-if (!GATEWAY_SECRET) {
-  console.error('[Gateway] FATAL: GATEWAY_SECRET env var is missing. Refusing to start.');
-  process.exit(1);
-}
 
 // Consistent Hash Ring for Chat Microservices
 const chatHashRing = new ConsistentHashRing(CHAT_SERVICE_URLS, { virtualNodes: 100 });
 
-// H-04: Use jwt.verify (cryptographic check) instead of jwt.decode (no check)
-// for extracting a routing key from the bearer token.
-const getRoutingKey = (req: any): string => {
-  // 1. Gateway already validated and injected x-user-id — safest path
-  if (req.headers && req.headers['x-user-id']) {
-    return req.headers['x-user-id'];
-  }
+// x-user-id is guaranteed to be present at this point:
+// - REST /api/chat: injected by authenticateToken, enforced by requireAuth
+// - WebSocket /socket.io: injected and enforced by the upgrade handler
+const getRoutingKey = (req: any): string => req.headers['x-user-id'] as string;
 
-  // 2. Try to verify the bearer token and extract the user id
-  const authHeader = req.headers?.authorization;
-  if (authHeader?.startsWith('Bearer ')) {
-    const token = authHeader.split(' ')[1];
-    try {
-      const payload = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] }) as { id: string };
-      if (payload?.id) return payload.id;
-    } catch {}
-  }
-
-  // 3. Fallback: use the (sanitised) remote address as the hash key
-  const clientIp = req.socket?.remoteAddress || '127.0.0.1';
-  return String(clientIp);
-};
-
-const getTargetChatNode = (req: any): string => {
-  const key = getRoutingKey(req);
-  return chatHashRing.getNode(key) || CHAT_SERVICE_URLS[0];
-};
+const getTargetChatNode = (req: any): string =>
+  chatHashRing.getNode(getRoutingKey(req)) || CHAT_SERVICE_URLS[0];
 
 // 1. Security & CORS
 app.use(helmet());
-app.use(cors({ origin: CLIENT_URL, credentials: true }));
+app.use(cors({ origin: env.CLIENT_URL, credentials: true }));
 
 // 2. Prevent client header spoofing by stripping all internal headers before
 //    any authentication or routing logic runs.
@@ -92,7 +43,7 @@ const authenticateToken = (req: express.Request, res: express.Response, next: ex
   const token = authHeader.split(' ')[1];
   try {
     // M-08: Explicit algorithm restriction prevents alg-confusion attacks.
-    const payload = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] }) as {
+    const payload = jwt.verify(token, env.JWT_SECRET, { algorithms: ['HS256'] }) as {
       id: string;
       email?: string;
       collegeId?: string;
@@ -104,7 +55,7 @@ const authenticateToken = (req: express.Request, res: express.Response, next: ex
     req.headers['x-user-college-id'] = payload.collegeId || '';
     // C-03: Attach the shared secret so downstream services can verify the
     // headers came from the gateway and not from a direct attacker.
-    req.headers['x-gateway-secret'] = GATEWAY_SECRET;
+    req.headers['x-gateway-secret'] = env.GATEWAY_SECRET;
 
     next();
   } catch (err) {
@@ -164,7 +115,7 @@ app.get('/api/health', (_req, res) => {
 app.use(
   '/api/auth',
   createProxyMiddleware({
-    target: CORE_SERVICE_URL,
+    target: env.CORE_SERVICE_URL,
     changeOrigin: true,
     proxyTimeout: PROXY_TIMEOUT_MS,
     timeout: SOCKET_TIMEOUT_MS,
@@ -176,23 +127,6 @@ app.use(
   })
 );
 
-// 6. Route: Board Matching (Vector Recommendation) -> Recommendation Service
-app.use(
-  '/api/boards/matched',
-  authenticateToken,
-  requireAuth,
-  createProxyMiddleware({
-    target: REC_SERVICE_URL,
-    changeOrigin: true,
-    proxyTimeout: PROXY_TIMEOUT_MS,
-    timeout: SOCKET_TIMEOUT_MS,
-    pathRewrite: (_path, req) => (req as express.Request).originalUrl.replace(/^\/api/, ''),
-    on: {
-      proxyReq: onProxyReq,
-      error: onProxyError,
-    },
-  })
-);
 
 // 7. Route: Recommendations (Similarity / Peers / Boards) -> Recommendation Service
 app.use(
@@ -200,7 +134,7 @@ app.use(
   authenticateToken,
   requireAuth,
   createProxyMiddleware({
-    target: REC_SERVICE_URL,
+    target: env.REC_SERVICE_URL,
     changeOrigin: true,
     proxyTimeout: PROXY_TIMEOUT_MS,
     timeout: SOCKET_TIMEOUT_MS,
@@ -219,7 +153,7 @@ app.use(
   authenticateToken,
   requireAuth,
   createProxyMiddleware({
-    target: CORE_SERVICE_URL,
+    target: env.CORE_SERVICE_URL,
     changeOrigin: true,
     proxyTimeout: PROXY_TIMEOUT_MS,
     timeout: SOCKET_TIMEOUT_MS,
@@ -270,13 +204,37 @@ app.use(
   })
 );
 
-const server = app.listen(PORT, '0.0.0.0', () => {
-  console.log(`[API Gateway] Running on port ${PORT}`);
+const server = app.listen(env.PORT, '0.0.0.0', () => {
+  console.log(`[API Gateway] Running on port ${env.PORT}`);
 });
 
-// Forward WebSocket HTTP Upgrade requests to the consistent hash proxy
+// Forward WebSocket HTTP Upgrade requests to the consistent hash proxy.
+// Authentication is enforced here — same guarantee as requireAuth on REST routes.
 server.on('upgrade', (req, socket, head) => {
-  if (req.url?.startsWith('/socket.io')) {
-    chatWsProxy.upgrade(req, socket as any, head);
+  if (!req.url?.startsWith('/socket.io')) return;
+
+  // Strip any spoofed internal headers from the upgrade request
+  delete (req.headers as any)['x-user-id'];
+  delete (req.headers as any)['x-gateway-secret'];
+
+  // Verify the Bearer token — reject the upgrade if missing or invalid
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith('Bearer ')) {
+    socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+    socket.destroy();
+    return;
   }
+
+  const token = authHeader.split(' ')[1];
+  try {
+    const payload = jwt.verify(token, env.JWT_SECRET, { algorithms: ['HS256'] }) as { id: string };
+    (req.headers as any)['x-user-id'] = payload.id;
+    (req.headers as any)['x-gateway-secret'] = env.GATEWAY_SECRET;
+  } catch {
+    socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+    socket.destroy();
+    return;
+  }
+
+  chatWsProxy.upgrade(req, socket as any, head);
 });

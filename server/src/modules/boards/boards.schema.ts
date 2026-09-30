@@ -47,7 +47,7 @@ export const globalBoardQuerySchema = z.object({
   college: z.string().optional(),
 });
 
-export const matchedBoardQuerySchema = z.object({
+export const myPostingsQuerySchema = z.object({
   cursor: z.string().optional(),
   limit: z.coerce.number().min(1).max(30).optional().default(30),
   community: z.string().optional(),

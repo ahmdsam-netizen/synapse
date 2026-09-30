@@ -17,7 +17,7 @@ export const boardsApi = {
   },
 
   getMatched: (cursor?: string | null, limit: number = 30, community?: string) =>
-    apiClient.get<PaginatedResponse<BoardPosting>>('/boards/matched', { params: { cursor, limit, community } }),
+    apiClient.get<PaginatedResponse<BoardPosting>>('/recommendations/boards', { params: { cursor, limit, community } }),
 
   getMyPostings: (params?: { cursor?: string | null; limit?: number; community?: string }) =>
     apiClient.get<PaginatedResponse<BoardPosting>>('/boards/my-postings', { params }),

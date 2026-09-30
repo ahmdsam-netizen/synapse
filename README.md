@@ -64,9 +64,9 @@ graph TD
 +-----------------------------------------------------------------------------------+
         |                                 |                                  |
         | /api/auth/**, /api/users/**     | /api/recommendations/**          | /socket.io/** (WebSockets)
-        | /api/connections/**             | /api/boards/matched              | /api/chat/** (REST History)
-        | /api/groups/**                  | (Enriched: x-user-id)            | (Consistent Hashing: userId -> Node)
-        | /api/communities/**             |                                  |
+        | /api/connections/**             | (/similarity, /second-degree,    | /api/chat/** (REST History)
+        | /api/groups/**                  |  /boards)                        | (Consistent Hashing: userId -> Node)
+        | /api/communities/**             | (Enriched: x-user-id)            |
         | /api/boards/**                  |                                  |
         v                                 v                                  v
 +-----------------------+     +-----------------------+     +-----------------------------------+
@@ -109,8 +109,8 @@ graph TD
     - **Reconnection Stickiness**: Disconnecting and reconnecting guarantees that the user returns to the exact same server instance.
     - **Cache Protection on Cluster Scaling**: When nodes are added or removed, only $1/N$ of keys migrate. Existing users stay pinned to their active server node, preventing in-memory local caches from becoming invalid or thrashing.
   - **Dynamic Reverse Proxy Routing**:
-    - Proxies `/api/auth/**`, `/api/users/**`, `/api/connections/**`, `/api/groups/**`, `/api/communities/**`, `/api/boards/global`, `/api/boards/college`, and `/api/search/**` to the **Core Service**.
-    - Proxies `/api/recommendations/**` and `/api/boards/matched` directly to the **Recommendation Service**.
+    - Proxies `/api/auth/**`, `/api/users/**`, `/api/connections/**`, `/api/groups/**`, `/api/communities/**`, `/api/boards/**`, and `/api/search/**` to the **Core Service**.
+    - Proxies `/api/recommendations/**` directly to the **Recommendation Service**.
     - Tunnels WebSocket `Upgrade: websocket` requests for `/socket.io` to the consistent-hash-selected chat instance.
     - Proxies `/api/chat/**` to the consistent-hash-selected chat instance.
   - **Resilience**: Features custom proxy error handling (`onProxyError`) to return structured 502 Bad Gateway responses during service restarts instead of hanging connections.
@@ -167,7 +167,7 @@ graph TD
     - Ranks candidates using a hybrid score formula:
       $$\text{Score} = (\text{mutualCount} \times 100.0) + (\text{similarityScore} \times 50.0)$$
     - Omits percentage badges to keep 2nd-degree recommendations focused strictly on social proof (mutual friends).
-  - **Semantic Board Matching (`/boards/matched`)**:
+  - **Semantic Board Matching (`/recommendations/boards`)**:
     - Matches active user profile embeddings against board posting requirements (roles, required skills, project descriptions).
     - Automatically excludes postings created by the user themselves.
     - Returns semantic match percentages for opportunities created by other students.
@@ -307,7 +307,7 @@ graph TD
 | `/api/boards/my-postings` | GET | Core Service (`:4000`) | Yes | Own postings (no match percentage) |
 | `/api/recommendations/similarity` | GET | Recommendation Service (`:5000`) | Yes | Vector peer cosine similarity + percentage badge |
 | `/api/recommendations/second-degree` | GET | Recommendation Service (`:5000`) | Yes | 2-hop graph candidates + hybrid ranking |
-| `/api/boards/matched` | GET | Recommendation Service (`:5000`) | Yes | Vector semantic match + percentage badge |
+| `/api/recommendations/boards` | GET | Recommendation Service (`:5000`) | Yes | Vector semantic match + percentage badge |
 | `/socket.io/**` | WS / GET | Chat Cluster (`:4001`, `:4002`) | Yes (Handshake) | Real-Time WebSocket stream, Consistent Hashing |
 | `/api/chat/groups/:groupId/messages` | GET | Chat Cluster (`:4001`, `:4002`) | Yes | Chronological message history with pagination |
 | `/api/chat/health` | GET | Chat Cluster (`:4001`, `:4002`) | No | Chat service cluster node status |
