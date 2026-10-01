@@ -72,3 +72,34 @@ export function formatTimeRemaining(dateString: string | null | undefined): stri
   }
   return `${Math.max(1, minutes)}m left`;
 }
+
+export function getErrorMessage(err: unknown, fallback = 'Something went wrong. Please try again.'): string {
+  const errObj = err as any;
+  const message =
+    errObj?.response?.data?.error ||
+    errObj?.response?.data?.message ||
+    errObj?.message;
+
+  if (!message || typeof message !== 'string') return fallback;
+
+  // Mask database internals, stack traces, and SQL driver messages
+  const technicalKeywords = [
+    'prisma',
+    '$queryraw',
+    'syntax error',
+    'operator does not exist',
+    'code:',
+    'internal_error',
+    'database_error',
+    'select ',
+    'insert into',
+    'where ',
+  ];
+
+  const lower = message.toLowerCase();
+  if (technicalKeywords.some((kw) => lower.includes(kw)) || (errObj?.response?.status && errObj.response.status >= 500)) {
+    return fallback;
+  }
+
+  return message;
+}

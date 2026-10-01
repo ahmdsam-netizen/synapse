@@ -203,30 +203,6 @@ services:
       - /app/node_modules
     command: npm run dev
 
-  worker:
-    image: synapse-core-service:latest
-    container_name: synapse-worker
-    environment:
-      DATABASE_URL: ${DATABASE_URL:-postgresql://synapse:synapse_dev@postgres:5432/synapse}
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
-      PORT: 4000
-      NODE_ENV: ${NODE_ENV:-development}
-      CLIENT_URL: ${CLIENT_URL:-http://localhost}
-      JWT_SECRET: ${JWT_SECRET:-super-secret-jwt-key-minimum-32-characters-dev-key}
-      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-super-secret-refresh-jwt-key-minimum-32-characters-dev}
-      GATEWAY_SECRET: ${GATEWAY_SECRET:-super-secret-internal-gateway-key-32-chars}
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      core-service:
-        condition: service_started
-    volumes:
-      - ./server:/app
-      - /app/node_modules
-    command: npm run worker
-
   client:
     build:
       context: ./client

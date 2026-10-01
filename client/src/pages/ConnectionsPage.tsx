@@ -21,6 +21,7 @@ import { FilterPanel } from '../components/shared/FilterPanel';
 import { InfiniteScrollLoader } from '../components/shared/InfiniteScrollLoader';
 import { PageTabButton } from '../components/shared/PageTabButton';
 import { useInfiniteScroll } from '../hooks/useInfiniteScroll';
+import { getErrorMessage } from '../lib/utils';
 
 export default function ConnectionsPage() {
   const queryClient = useQueryClient();
@@ -117,8 +118,8 @@ export default function ConnectionsPage() {
       queryClient.invalidateQueries({ queryKey: ['connections'] });
       queryClient.invalidateQueries({ queryKey: ['connections', 'second-degree'] });
     },
-    onError: () => {
-      toast.error('Failed to remove connection');
+    onError: (err) => {
+      toast.error(getErrorMessage(err, 'Failed to remove connection'));
     },
   });
 
@@ -214,7 +215,7 @@ export default function ConnectionsPage() {
             ) : isConnectionsError ? (
               <EmptyState
                 title="Failed to load connections"
-                description={(connectionsError as any)?.response?.data?.error || "Could not retrieve your connection list. Please try again."}
+                description={getErrorMessage(connectionsError, "Could not retrieve your connection list. Please try again.")}
                 action={{
                   label: 'Retry',
                   onClick: () => queryClient.invalidateQueries({ queryKey: ['connections'] }),
@@ -265,12 +266,7 @@ export default function ConnectionsPage() {
             ) : isSecondDegreeError ? (
               <EmptyState
                 title="Failed to load suggestions"
-                description={
-                  (secondDegreeError as any)?.response?.data?.error ||
-                  (secondDegreeError as any)?.response?.data?.message ||
-                  (secondDegreeError as any)?.message ||
-                  "Could not retrieve 2nd-degree network suggestions. Please try again."
-                }
+                description={getErrorMessage(secondDegreeError, "Could not retrieve 2nd-degree network suggestions. Please try again.")}
                 action={{
                   label: 'Retry',
                   onClick: () => refetchSecondDegree(),
@@ -355,11 +351,7 @@ export default function ConnectionsPage() {
             ) : isFilteredError ? (
               <EmptyState 
                 title="Something went wrong" 
-                description={
-                  (filteredError as any)?.response?.data?.error || 
-                  (filteredError as any)?.response?.data?.message || 
-                  "We couldn't load students at this time. Please check your connection and try again."
-                }
+                description={getErrorMessage(filteredError, "We couldn't load students at this time. Please check your connection and try again.")}
                 action={{
                   label: 'Try Again',
                   onClick: () => refetchFiltered(),

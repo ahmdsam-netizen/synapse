@@ -79,12 +79,21 @@ export async function getProfile(viewerId: string | null, targetId: string) {
     }
 
     // Mutual friends count on symmetric connection_edges
-    const mutualRes: Array<{ count: bigint | number }> = await prisma.$queryRaw`
-      SELECT COUNT(*)::int as count FROM connection_edges e1 
-      JOIN connection_edges e2 ON e1.friend_id = e2.friend_id 
-      WHERE e1.user_id = ${viewerId}::uuid AND e2.user_id = ${targetId}::uuid
-    `;
-    mutualConnections = Number(mutualRes[0]?.count || 0);
+    const viewerEdges = await prisma.connectionEdge.findMany({
+      where: { userId: viewerId },
+      select: { friendId: true },
+    });
+    const viewerFriendIds = viewerEdges.map((e) => e.friendId);
+    if (viewerFriendIds.length > 0) {
+      mutualConnections = await prisma.connectionEdge.count({
+        where: {
+          userId: targetId,
+          friendId: { in: viewerFriendIds },
+        },
+      });
+    } else {
+      mutualConnections = 0;
+    }
   }
 
   const flattenedSkills = user.skills.map((us) => ({

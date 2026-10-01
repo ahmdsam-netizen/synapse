@@ -4,6 +4,7 @@ WORKDIR /app
 
 # Install deps first (cached layer unless package files change)
 COPY package*.json ./
+COPY prisma ./prisma/
 RUN npm ci
 
 COPY tsconfig.json ./

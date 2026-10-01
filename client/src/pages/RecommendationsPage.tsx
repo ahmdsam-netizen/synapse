@@ -14,7 +14,7 @@ import { JoinRequestModal } from '../components/board/JoinRequestModal';
 import { EmptyState } from '../components/shared/EmptyState';
 import { InfiniteScrollLoader } from '../components/shared/InfiniteScrollLoader';
 import { PageTabButton } from '../components/shared/PageTabButton';
-import { cn } from '../lib/utils';
+import { cn, getErrorMessage } from '../lib/utils';
 import { useInfiniteScroll } from '../hooks/useInfiniteScroll';
 
 export default function RecommendationsPage() {
@@ -192,12 +192,7 @@ export default function RecommendationsPage() {
           ) : isErrorUsers ? (
             <EmptyState 
               title="Something went wrong" 
-              description={
-                (errorUsers as any)?.response?.data?.error || 
-                (errorUsers as any)?.response?.data?.message || 
-                (errorUsers as any)?.message || 
-                "We couldn't load students at this time. Please check your connection and try again."
-              }
+              description={getErrorMessage(errorUsers, "We couldn't load students at this time. Please check your connection and try again.")}
               action={{
                 label: 'Try Again',
                 onClick: () => refetchUsers(),

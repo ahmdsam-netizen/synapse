@@ -135,107 +135,165 @@ export const getGlobalBoard = async (
   userId?: string
 ) => {
   const { skills, interests, collegeId } = filters;
-  const params: any[] = [];
-  let paramIndex = 1;
-  let baseQuery = `
-    SELECT bp.*, g.name as group_name, g.college_id as group_college_id, g.creator_id,
-           c.name as college_name
-    FROM board_postings bp
-    JOIN groups g ON g.id = bp.group_id
-    LEFT JOIN colleges c ON c.id = g.college_id
-    WHERE bp.status = 'open' AND bp.slots_filled < bp.slots_total AND (bp.expires_at IS NULL OR bp.expires_at > NOW())
-  `;
 
-  if (filters.q && filters.q.trim()) {
-    baseQuery += ` AND (bp.title ILIKE $${paramIndex} OR bp.description ILIKE $${paramIndex} OR g.name ILIKE $${paramIndex})`;
-    params.push(`%${filters.q.trim()}%`);
-    paramIndex++;
-  }
-
-  if (filters.community && filters.community !== 'all') {
-    baseQuery += ` AND bp.community = $${paramIndex}`;
-    params.push(filters.community);
-    paramIndex++;
-  }
-
+  let skillUuids: string[] = [];
   if (skills && skills.length > 0) {
-    const skillUuids = skills.filter((s: string) =>
+    const rawUuids = skills.filter((s: string) =>
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s)
     );
     const skillNames = skills.filter(
       (s: string) =>
         !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s)
     );
-    if (skillUuids.length > 0) {
-      baseQuery += ` AND bp.required_skill_ids && $${paramIndex}::uuid[]`;
-      params.push(skillUuids);
-      paramIndex++;
-    }
+    skillUuids = [...rawUuids];
     if (skillNames.length > 0) {
-      baseQuery += ` AND EXISTS (
-        SELECT 1 FROM skills s WHERE s.id = ANY(bp.required_skill_ids) AND s.name = ANY($${paramIndex}::text[])
-      )`;
-      params.push(skillNames);
-      paramIndex++;
+      const records = await prisma.skill.findMany({
+        where: { name: { in: skillNames, mode: 'insensitive' } },
+        select: { id: true },
+      });
+      skillUuids.push(...records.map((r) => r.id));
     }
   }
 
+  let interestUuids: string[] = [];
   if (interests && interests.length > 0) {
-    const interestUuids = interests.filter((i: string) =>
+    const rawUuids = interests.filter((i: string) =>
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(i)
     );
     const interestNames = interests.filter(
       (i: string) =>
         !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(i)
     );
-    if (interestUuids.length > 0) {
-      baseQuery += ` AND bp.required_interest_ids && $${paramIndex}::uuid[]`;
-      params.push(interestUuids);
-      paramIndex++;
-    }
+    interestUuids = [...rawUuids];
     if (interestNames.length > 0) {
-      baseQuery += ` AND EXISTS (
-        SELECT 1 FROM interests i WHERE i.id = ANY(bp.required_interest_ids) AND i.name = ANY($${paramIndex}::text[])
-      )`;
-      params.push(interestNames);
-      paramIndex++;
+      const records = await prisma.interest.findMany({
+        where: { name: { in: interestNames, mode: 'insensitive' } },
+        select: { id: true },
+      });
+      interestUuids.push(...records.map((r) => r.id));
     }
+  }
+
+  const where: any = {
+    status: 'open',
+    OR: [
+      { expiresAt: null },
+      { expiresAt: { gt: new Date() } },
+    ],
+  };
+
+  if (filters.q && filters.q.trim()) {
+    const q = filters.q.trim();
+    where.AND = [
+      ...(where.AND || []),
+      {
+        OR: [
+          { title: { contains: q, mode: 'insensitive' } },
+          { description: { contains: q, mode: 'insensitive' } },
+          { group: { name: { contains: q, mode: 'insensitive' } } },
+        ],
+      },
+    ];
+  }
+
+  if (filters.community && filters.community !== 'all') {
+    where.community = filters.community;
+  }
+
+  if (skillUuids.length > 0) {
+    where.requiredSkillIds = { hasSome: skillUuids };
+  }
+
+  if (interestUuids.length > 0) {
+    where.requiredInterestIds = { hasSome: interestUuids };
   }
 
   const collegeVal = collegeId || (filters as any).college;
   if (collegeVal && String(collegeVal).trim()) {
     const trimmed = String(collegeVal).trim();
     const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed);
-    if (isUuid) {
-      baseQuery += ` AND (g.college_id::text = $${paramIndex} OR c.name ILIKE $${paramIndex + 1})`;
-      params.push(trimmed, `%${trimmed}%`);
-      paramIndex += 2;
-    } else {
-      baseQuery += ` AND c.name ILIKE $${paramIndex}`;
-      params.push(`%${trimmed}%`);
-      paramIndex++;
-    }
+    where.group = {
+      ...(where.group || {}),
+      OR: [
+        ...(isUuid ? [{ collegeId: trimmed }] : []),
+        { college: { name: { contains: trimmed, mode: 'insensitive' } } },
+      ],
+    };
   }
 
+  let decodedCursor: { createdAt: string; id: string } | null = null;
   if (cursor) {
     const decoded = decodeCursor(cursor);
     if (decoded && decoded.createdAt && decoded.id) {
-      baseQuery += ` AND (bp.created_at, bp.id) < ($${paramIndex}, $${paramIndex + 1})`;
-      params.push(decoded.createdAt, decoded.id);
-      paramIndex += 2;
+      decodedCursor = { createdAt: decoded.createdAt, id: decoded.id };
     }
   }
 
-  baseQuery += ` ORDER BY bp.created_at DESC, bp.id DESC LIMIT $${paramIndex}`;
-  params.push(limit + 1);
+  if (decodedCursor) {
+    where.AND = [
+      ...(where.AND || []),
+      {
+        OR: [
+          { createdAt: { lt: new Date(decodedCursor.createdAt) } },
+          { createdAt: new Date(decodedCursor.createdAt), id: { lt: decodedCursor.id } },
+        ],
+      },
+    ];
+  }
 
-  const rows: any[] = await prisma.$queryRawUnsafe(baseQuery, ...params);
+  const rawPostings = await prisma.boardPosting.findMany({
+    where,
+    include: {
+      group: {
+        include: {
+          college: true,
+        },
+      },
+    },
+    orderBy: [
+      { createdAt: 'desc' },
+      { id: 'desc' },
+    ],
+    take: limit + 1,
+  });
 
-  const paginated = buildPaginationResult(rows, limit, (item: any) => ({
-    createdAt: item.created_at,
+  const validPostings = rawPostings.filter((bp) => (bp.slotsFilled ?? 0) < bp.slotsTotal);
+
+  const paginated = buildPaginationResult(validPostings, limit, (item) => ({
+    createdAt: item.createdAt?.toISOString() || '',
     id: item.id,
   }));
-  const hydrated = await hydrateBoardPostings(paginated.data, userId);
+
+  const rows = paginated.data.map((bp) => ({
+    id: bp.id,
+    groupId: bp.groupId,
+    creatorId: bp.group.creatorId,
+    creator_id: bp.group.creatorId,
+    title: bp.title,
+    description: bp.description,
+    rolesNeeded: bp.rolesNeeded,
+    roles_needed: bp.rolesNeeded,
+    requiredSkillIds: bp.requiredSkillIds,
+    required_skill_ids: bp.requiredSkillIds,
+    requiredInterestIds: bp.requiredInterestIds,
+    required_interest_ids: bp.requiredInterestIds,
+    slotsTotal: bp.slotsTotal,
+    slots_total: bp.slotsTotal,
+    slotsFilled: bp.slotsFilled ?? 0,
+    slots_filled: bp.slotsFilled ?? 0,
+    community: bp.community,
+    expiresAt: bp.expiresAt,
+    expires_at: bp.expiresAt,
+    status: bp.status,
+    createdAt: bp.createdAt,
+    created_at: bp.createdAt,
+    group_name: bp.group.name,
+    groupName: bp.group.name,
+    college_name: bp.group.college?.name || null,
+    collegeName: bp.group.college?.name || null,
+  }));
+
+  const hydrated = await hydrateBoardPostings(rows, userId);
   return { ...paginated, data: hydrated };
 };
 
@@ -245,49 +303,101 @@ export const getMyPostings = async (
   limit: number,
   community?: string
 ) => {
-  const params: any[] = [userId];
-  let paramIndex = 2;
-  let baseQuery = `
-    SELECT bp.*, g.name as group_name, g.college_id as group_college_id, g.creator_id as creator_id,
-           c.name as college_name,
-           (SELECT COUNT(*) FROM join_requests jr WHERE jr.posting_id = bp.id AND jr.status = 'pending') as pending_request_count
-    FROM board_postings bp
-    JOIN groups g ON g.id = bp.group_id
-    LEFT JOIN colleges c ON c.id = g.college_id
-    WHERE (g.creator_id = $1 OR EXISTS (
-      SELECT 1 FROM group_members gm WHERE gm.group_id = g.id AND gm.user_id = $1 AND gm.role = 'admin'
-    ))
-    AND (bp.expires_at IS NULL OR bp.expires_at > NOW())
-  `;
-
-  if (community && community !== 'all') {
-    baseQuery += ` AND bp.community = $${paramIndex}`;
-    params.push(community);
-    paramIndex++;
-  }
-
+  let decodedCursor: { createdAt: string; id: string } | null = null;
   if (cursor) {
     const decoded = decodeCursor(cursor);
     if (decoded && decoded.createdAt && decoded.id) {
-      baseQuery += ` AND (bp.created_at, bp.id) < ($${paramIndex}, $${paramIndex + 1})`;
-      params.push(decoded.createdAt, decoded.id);
-      paramIndex += 2;
+      decodedCursor = { createdAt: decoded.createdAt, id: decoded.id };
     }
   }
 
-  baseQuery += ` ORDER BY bp.created_at DESC, bp.id DESC LIMIT $${paramIndex}`;
-  params.push(limit + 1);
+  const where: any = {
+    group: {
+      OR: [
+        { creatorId: userId },
+        { members: { some: { userId, role: 'admin' } } },
+      ],
+    },
+    OR: [
+      { expiresAt: null },
+      { expiresAt: { gt: new Date() } },
+    ],
+  };
 
-  const rows: any[] = await prisma.$queryRawUnsafe(baseQuery, ...params);
+  if (community && community !== 'all') {
+    where.community = community;
+  }
 
-  const paginated = buildPaginationResult(rows, limit, (item: any) => ({
-    createdAt: item.created_at,
+  if (decodedCursor) {
+    where.AND = [
+      {
+        OR: [
+          { createdAt: { lt: new Date(decodedCursor.createdAt) } },
+          { createdAt: new Date(decodedCursor.createdAt), id: { lt: decodedCursor.id } },
+        ],
+      },
+    ];
+  }
+
+  const postings = await prisma.boardPosting.findMany({
+    where,
+    include: {
+      group: {
+        include: {
+          college: true,
+        },
+      },
+      joinRequests: {
+        where: { status: 'pending' },
+        select: { id: true },
+      },
+    },
+    orderBy: [
+      { createdAt: 'desc' },
+      { id: 'desc' },
+    ],
+    take: limit + 1,
+  });
+
+  const paginated = buildPaginationResult(postings, limit, (item) => ({
+    createdAt: item.createdAt?.toISOString() || '',
     id: item.id,
   }));
-  const hydrated = await hydrateBoardPostings(paginated.data, userId);
+
+  const rows = paginated.data.map((bp) => ({
+    id: bp.id,
+    groupId: bp.groupId,
+    creatorId: bp.group.creatorId,
+    creator_id: bp.group.creatorId,
+    title: bp.title,
+    description: bp.description,
+    rolesNeeded: bp.rolesNeeded,
+    roles_needed: bp.rolesNeeded,
+    requiredSkillIds: bp.requiredSkillIds,
+    required_skill_ids: bp.requiredSkillIds,
+    requiredInterestIds: bp.requiredInterestIds,
+    required_interest_ids: bp.requiredInterestIds,
+    slotsTotal: bp.slotsTotal,
+    slots_total: bp.slotsTotal,
+    slotsFilled: bp.slotsFilled ?? 0,
+    slots_filled: bp.slotsFilled ?? 0,
+    community: bp.community,
+    expiresAt: bp.expiresAt,
+    expires_at: bp.expiresAt,
+    status: bp.status,
+    createdAt: bp.createdAt,
+    created_at: bp.createdAt,
+    group_name: bp.group.name,
+    groupName: bp.group.name,
+    college_name: bp.group.college?.name || null,
+    collegeName: bp.group.college?.name || null,
+    pending_request_count: bp.joinRequests.length,
+  }));
+
+  const hydrated = await hydrateBoardPostings(rows, userId);
   const data = hydrated.map((item, idx) => ({
     ...item,
-    pendingRequestCount: Number(paginated.data[idx]?.pending_request_count || 0),
+    pendingRequestCount: Number(rows[idx]?.pending_request_count || 0),
     isOwner: true,
     matchPercentage: undefined,
     match_percentage: undefined,
@@ -693,27 +803,89 @@ export const getMyRequests = async (userId: string) => {
 };
 
 export const getAllBoardsForEmbedding = async () => {
-  const rows: any[] = await prisma.$queryRaw`
-    SELECT bp.id, bp.group_id, g.creator_id, bp.title, bp.description, bp.roles_needed,
-           bp.slots_total, bp.slots_filled, bp.expires_at, bp.required_skill_ids, bp.required_interest_ids,
-           g.name as group_name
-    FROM board_postings bp
-    LEFT JOIN groups g ON bp.group_id = g.id
-    WHERE (bp.expires_at IS NULL OR bp.expires_at > NOW())
-      AND bp.slots_filled < bp.slots_total
-  `;
-  return hydrateBoardPostings(rows);
+  const postings = await prisma.boardPosting.findMany({
+    where: {
+      OR: [
+        { expiresAt: null },
+        { expiresAt: { gt: new Date() } },
+      ],
+    },
+    include: {
+      group: {
+        select: {
+          creatorId: true,
+          name: true,
+        },
+      },
+    },
+  });
+
+  const validRows = postings
+    .filter((bp) => (bp.slotsFilled ?? 0) < bp.slotsTotal)
+    .map((bp) => ({
+      id: bp.id,
+      groupId: bp.groupId,
+      creatorId: bp.group.creatorId,
+      creator_id: bp.group.creatorId,
+      title: bp.title,
+      description: bp.description,
+      rolesNeeded: bp.rolesNeeded,
+      roles_needed: bp.rolesNeeded,
+      slotsTotal: bp.slotsTotal,
+      slots_total: bp.slotsTotal,
+      slotsFilled: bp.slotsFilled ?? 0,
+      slots_filled: bp.slotsFilled ?? 0,
+      expiresAt: bp.expiresAt,
+      expires_at: bp.expiresAt,
+      requiredSkillIds: bp.requiredSkillIds,
+      required_skill_ids: bp.requiredSkillIds,
+      requiredInterestIds: bp.requiredInterestIds,
+      required_interest_ids: bp.requiredInterestIds,
+      groupName: bp.group.name,
+      group_name: bp.group.name,
+    }));
+
+  return hydrateBoardPostings(validRows);
 };
 
 export const getBoardForEmbedding = async (postingId: string) => {
-  const rows: any[] = await prisma.$queryRaw`
-    SELECT bp.id, bp.group_id, g.creator_id, bp.title, bp.description, bp.roles_needed,
-           bp.slots_total, bp.slots_filled, bp.expires_at, bp.required_skill_ids, bp.required_interest_ids,
-           g.name as group_name
-    FROM board_postings bp
-    LEFT JOIN groups g ON bp.group_id = g.id
-    WHERE bp.id = ${postingId}::uuid
-  `;
-  const hydrated = await hydrateBoardPostings(rows);
+  const bp = await prisma.boardPosting.findUnique({
+    where: { id: postingId },
+    include: {
+      group: {
+        select: {
+          creatorId: true,
+          name: true,
+        },
+      },
+    },
+  });
+
+  if (!bp) return null;
+
+  const hydrated = await hydrateBoardPostings([
+    {
+      id: bp.id,
+      groupId: bp.groupId,
+      creatorId: bp.group.creatorId,
+      creator_id: bp.group.creatorId,
+      title: bp.title,
+      description: bp.description,
+      rolesNeeded: bp.rolesNeeded,
+      roles_needed: bp.rolesNeeded,
+      slotsTotal: bp.slotsTotal,
+      slots_total: bp.slotsTotal,
+      slotsFilled: bp.slotsFilled ?? 0,
+      slots_filled: bp.slotsFilled ?? 0,
+      expiresAt: bp.expiresAt,
+      expires_at: bp.expiresAt,
+      requiredSkillIds: bp.requiredSkillIds,
+      required_skill_ids: bp.requiredSkillIds,
+      requiredInterestIds: bp.requiredInterestIds,
+      required_interest_ids: bp.requiredInterestIds,
+      groupName: bp.group.name,
+      group_name: bp.group.name,
+    },
+  ]);
   return hydrated[0] || null;
 };

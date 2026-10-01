@@ -31,191 +31,220 @@ export const searchUsers = async (
     limit = 30,
   } = filters;
 
-  const params: any[] = [userId];
-  let paramIndex = 2;
-
   const hasSkills = Array.isArray(skills) && skills.length > 0;
   const hasInterests = Array.isArray(interests) && interests.length > 0;
 
-  let skillMatchesSelect = '0 as skill_match_count';
-  let skillLateralJoin = '';
-  if (hasSkills) {
-    skillMatchesSelect = 'COALESCE(skill_matches.cnt, 0) as skill_match_count';
-    skillLateralJoin = `
-      LEFT JOIN LATERAL (
-        SELECT COUNT(*) as cnt FROM user_skills us
-        JOIN skills s ON s.id = us.skill_id
-        WHERE us.user_id = u.id AND (us.skill_id::text = ANY($${paramIndex}::text[]) OR s.name = ANY($${paramIndex}::text[]))
-      ) skill_matches ON true
-    `;
-    params.push(skills);
-    paramIndex++;
-  }
+  // Build Prisma where conditions
+  const where: any = {
+    id: { not: userId },
+    outgoingEdges: { none: { friendId: userId } },
+    blockedUsers: { none: { blockedId: userId } },
+    blockedBy: { none: { blockerId: userId } },
+  };
 
-  let interestMatchesSelect = '0 as interest_match_count';
-  let interestLateralJoin = '';
-  if (hasInterests) {
-    interestMatchesSelect = 'COALESCE(interest_matches.cnt, 0) as interest_match_count';
-    interestLateralJoin = `
-      LEFT JOIN LATERAL (
-        SELECT COUNT(*) as cnt FROM user_interests ui
-        JOIN interests i ON i.id = ui.interest_id
-        WHERE ui.user_id = u.id AND (ui.interest_id::text = ANY($${paramIndex}::text[]) OR i.name = ANY($${paramIndex}::text[]))
-      ) interest_matches ON true
-    `;
-    params.push(interests);
-    paramIndex++;
-  }
-
-  let baseQuery = `
-    WITH matched_users AS (
-      SELECT u.id, u.name, u.avatar_url, u.bio, u.college_id, u.year_of_study, u.branch,
-             u.looking_for, u.profile_completeness, u.last_active,
-             c.name as college_name,
-             ${skillMatchesSelect},
-             ${interestMatchesSelect}
-      FROM users u
-      LEFT JOIN colleges c ON c.id = u.college_id
-      ${skillLateralJoin}
-      ${interestLateralJoin}
-      WHERE u.id <> $1
-        AND NOT EXISTS (SELECT 1 FROM connection_edges WHERE user_id = $1 AND friend_id = u.id)
-        AND NOT EXISTS (SELECT 1 FROM user_blocks WHERE blocker_id = $1 AND blocked_id = u.id)
-        AND NOT EXISTS (SELECT 1 FROM user_blocks WHERE blocker_id = u.id AND blocked_id = $1)
-    )
-    SELECT * FROM matched_users WHERE true
-  `;
-
+  // Text query filter
   if (q && q.trim()) {
-    baseQuery += ` AND (name ILIKE $${paramIndex} OR bio ILIKE $${paramIndex} OR branch ILIKE $${paramIndex} OR college_name ILIKE $${paramIndex})`;
-    params.push(`%${q.trim()}%`);
-    paramIndex++;
+    const queryStr = q.trim();
+    where.AND = [
+      ...(where.AND || []),
+      {
+        OR: [
+          { name: { contains: queryStr, mode: 'insensitive' } },
+          { bio: { contains: queryStr, mode: 'insensitive' } },
+          { branch: { contains: queryStr, mode: 'insensitive' } },
+          { college: { name: { contains: queryStr, mode: 'insensitive' } } },
+        ],
+      },
+    ];
   }
 
+  // Skills filter
   if (hasSkills) {
+    const skillFilters = skills.map((s: string) => {
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
+      return isUuid
+        ? { skillId: s }
+        : { skill: { name: { equals: s, mode: 'insensitive' } } };
+    });
+
     if (matchMode === 'all') {
-      baseQuery += ` AND skill_match_count >= ${skills.length}`;
+      where.AND = [
+        ...(where.AND || []),
+        ...skillFilters.map((sf) => ({ skills: { some: sf } })),
+      ];
     } else {
-      baseQuery += ` AND skill_match_count > 0`;
+      where.AND = [
+        ...(where.AND || []),
+        { skills: { some: { OR: skillFilters } } },
+      ];
     }
   }
 
+  // Interests filter
   if (hasInterests) {
+    const interestFilters = interests.map((i: string) => {
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(i);
+      return isUuid
+        ? { interestId: i }
+        : { interest: { name: { equals: i, mode: 'insensitive' } } };
+    });
+
     if (matchMode === 'all') {
-      baseQuery += ` AND interest_match_count >= ${interests.length}`;
+      where.AND = [
+        ...(where.AND || []),
+        ...interestFilters.map((inf) => ({ interests: { some: inf } })),
+      ];
     } else {
-      baseQuery += ` AND interest_match_count > 0`;
+      where.AND = [
+        ...(where.AND || []),
+        { interests: { some: { OR: interestFilters } } },
+      ];
     }
   }
 
+  // College filter
   const collegeFilter = filterCollegeId || (filters as any).college;
-  if (collegeFilter && collegeFilter.trim()) {
-    const trimmed = collegeFilter.trim();
+  if (collegeFilter && String(collegeFilter).trim()) {
+    const trimmed = String(collegeFilter).trim();
     const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed);
-    if (isUuid) {
-      baseQuery += ` AND (college_id::text = $${paramIndex} OR college_name ILIKE $${paramIndex + 1})`;
-      params.push(trimmed, `%${trimmed}%`);
-      paramIndex += 2;
-    } else {
-      baseQuery += ` AND college_name ILIKE $${paramIndex}`;
-      params.push(`%${trimmed}%`);
-      paramIndex++;
-    }
+    where.AND = [
+      ...(where.AND || []),
+      {
+        OR: [
+          ...(isUuid ? [{ collegeId: trimmed }] : []),
+          { college: { name: { contains: trimmed, mode: 'insensitive' } } },
+        ],
+      },
+    ];
   }
 
+  // Year filter
   if (year && Number(year) > 0) {
-    baseQuery += ` AND year_of_study = $${paramIndex}`;
-    params.push(Number(year));
-    paramIndex++;
+    where.yearOfStudy = Number(year);
   }
 
+  // Looking for filter
   if (lookingFor && lookingFor.trim() && lookingFor !== 'any') {
-    baseQuery += ` AND looking_for = $${paramIndex}`;
-    params.push(lookingFor.trim());
-    paramIndex++;
+    where.lookingFor = lookingFor.trim();
   }
 
+  // Cursor decoding
+  let decodedCursor: { lastActive?: string; id?: string } | null = null;
   if (cursor) {
     const decoded = decodeCursor(cursor);
-    if (decoded && decoded.tagCount !== undefined && decoded.lastActive && decoded.id) {
-      baseQuery += ` AND ((skill_match_count + interest_match_count) < $${paramIndex} OR ((skill_match_count + interest_match_count) = $${paramIndex} AND (last_active < $${paramIndex + 1} OR (last_active = $${paramIndex + 1} AND id > $${paramIndex + 2}))))`;
-      params.push(decoded.tagCount, decoded.lastActive, decoded.id);
-      paramIndex += 3;
+    if (decoded && decoded.id) {
+      decodedCursor = decoded;
     }
   }
 
-  baseQuery += ` ORDER BY (skill_match_count + interest_match_count) DESC, last_active DESC NULLS LAST, id ASC LIMIT $${paramIndex}`;
-  params.push(limit + 1);
-
-  const rows: any[] = await prisma.$queryRawUnsafe(baseQuery, ...params);
-
-  const hasMore = rows.length > limit;
-  const items = hasMore ? rows.slice(0, limit) : rows;
-
-  if (items.length === 0) {
-    return { data: [], nextCursor: null, hasMore: false };
+  if (decodedCursor?.id) {
+    where.AND = [
+      ...(where.AND || []),
+      {
+        OR: [
+          ...(decodedCursor.lastActive
+            ? [
+                { lastActive: { lt: new Date(decodedCursor.lastActive) } },
+                { lastActive: new Date(decodedCursor.lastActive), id: { gt: decodedCursor.id } },
+              ]
+            : [{ id: { gt: decodedCursor.id } }]),
+        ],
+      },
+    ];
   }
 
-  const userIds = items.map((u) => u.id);
+  const users = await prisma.user.findMany({
+    where,
+    include: {
+      college: true,
+      skills: {
+        include: { skill: true },
+      },
+      interests: {
+        include: { interest: true },
+      },
+    },
+    orderBy: [
+      { lastActive: 'desc' },
+      { id: 'asc' },
+    ],
+    take: limit + 1,
+  });
 
-  const [skillsRes, interestsRes] = await Promise.all([
-    prisma.userSkill.findMany({
-      where: { userId: { in: userIds } },
-      include: { skill: true },
-    }),
-    prisma.userInterest.findMany({
-      where: { userId: { in: userIds } },
-      include: { interest: true },
-    }),
-  ]);
+  const targetSkillNamesLower = new Set(skills.map((s: string) => s.toLowerCase()));
+  const targetInterestNamesLower = new Set(interests.map((i: string) => i.toLowerCase()));
 
-  const userSkillsMap = new Map<string, any[]>();
-  const userInterestsMap = new Map<string, any[]>();
+  const enriched = users.map((u) => {
+    const userSkills = u.skills.map((us) => ({ id: us.skill.id, name: us.skill.name }));
+    const userInterests = u.interests.map((ui) => ({ id: ui.interest.id, name: ui.interest.name }));
 
-  for (const row of skillsRes) {
-    if (!userSkillsMap.has(row.userId)) userSkillsMap.set(row.userId, []);
-    userSkillsMap.get(row.userId)!.push({ id: row.skill.id, name: row.skill.name });
+    const matchedSkills = userSkills.filter(
+      (s) => targetSkillNamesLower.has(s.id.toLowerCase()) || targetSkillNamesLower.has(s.name.toLowerCase())
+    );
+    const matchedInterests = userInterests.filter(
+      (i) => targetInterestNamesLower.has(i.id.toLowerCase()) || targetInterestNamesLower.has(i.name.toLowerCase())
+    );
+
+    const skill_match_count = matchedSkills.length;
+    const interest_match_count = matchedInterests.length;
+
+    return {
+      id: u.id,
+      name: u.name,
+      avatarUrl: u.avatarUrl,
+      avatar_url: u.avatarUrl,
+      bio: u.bio,
+      collegeId: u.collegeId,
+      college_id: u.collegeId,
+      collegeName: u.college?.name || null,
+      college_name: u.college?.name || null,
+      yearOfStudy: u.yearOfStudy,
+      year_of_study: u.yearOfStudy,
+      branch: u.branch,
+      lookingFor: u.lookingFor,
+      looking_for: u.lookingFor,
+      profileCompleteness: u.profileCompleteness,
+      profile_completeness: u.profileCompleteness,
+      lastActive: u.lastActive,
+      last_active: u.lastActive,
+      skill_match_count,
+      interest_match_count,
+      skills: userSkills,
+      interests: userInterests,
+      matchedSkills,
+      matchedInterests,
+      matched_skills: matchedSkills,
+      matched_interests: matchedInterests,
+    };
+  });
+
+  // Sort by matches first if skills or interests were requested
+  if (hasSkills || hasInterests) {
+    enriched.sort((a, b) => {
+      const aScore = a.skill_match_count + a.interest_match_count;
+      const bScore = b.skill_match_count + b.interest_match_count;
+      if (bScore !== aScore) return bScore - aScore;
+      const aTime = a.lastActive ? new Date(a.lastActive).getTime() : 0;
+      const bTime = b.lastActive ? new Date(b.lastActive).getTime() : 0;
+      if (bTime !== aTime) return bTime - aTime;
+      return a.id.localeCompare(b.id);
+    });
   }
 
-  for (const row of interestsRes) {
-    if (!userInterestsMap.has(row.userId)) userInterestsMap.set(row.userId, []);
-    userInterestsMap.get(row.userId)!.push({ id: row.interest.id, name: row.interest.name });
-  }
-
-  const enrichedItems = items.map((item) => ({
-    ...item,
-    avatarUrl: item.avatar_url,
-    avatar_url: item.avatar_url,
-    collegeName: item.college_name,
-    college_name: item.college_name,
-    yearOfStudy: item.year_of_study,
-    year_of_study: item.year_of_study,
-    lookingFor: item.looking_for,
-    looking_for: item.looking_for,
-    profileCompleteness: item.profile_completeness,
-    profile_completeness: item.profile_completeness,
-    lastActive: item.last_active,
-    last_active: item.last_active,
-    skills: userSkillsMap.get(item.id) || [],
-    interests: userInterestsMap.get(item.id) || [],
-    matchedSkills: [],
-    matchedInterests: [],
-    matched_skills: [],
-    matched_interests: [],
-  }));
-
-  const lastItem = enrichedItems[enrichedItems.length - 1];
+  const hasMore = enriched.length > limit;
+  const items = hasMore ? enriched.slice(0, limit) : enriched;
+  const lastItem = items[items.length - 1];
   const nextCursor =
     hasMore && lastItem
       ? encodeCursor({
-          tagCount: Number(lastItem.skill_match_count) + Number(lastItem.interest_match_count),
-          lastActive: lastItem.last_active,
+          tagCount: lastItem.skill_match_count + lastItem.interest_match_count,
+          lastActive: lastItem.lastActive,
           id: lastItem.id,
         })
       : null;
 
   return {
-    data: enrichedItems,
+    data: items,
     nextCursor,
     hasMore,
   };

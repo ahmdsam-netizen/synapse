@@ -24,12 +24,26 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
     return;
   }
 
-  // Unknown errors
+  // Unknown / unhandled errors
   console.error('Unhandled error:', err);
-  // M-01: Always return a generic message — never expose internal details to
-  // clients in production. Stack traces are only printed to server logs.
+
+  // Check if error is an internal database/query error (Prisma, Postgres, SQL)
+  const errName = typeof err?.name === 'string' ? err.name : '';
+  const errMsg = typeof err?.message === 'string' ? err.message : '';
+  const isDatabaseError =
+    errName.includes('Prisma') ||
+    errMsg.includes('prisma') ||
+    errMsg.includes('$queryRaw') ||
+    errMsg.includes('syntax error') ||
+    errMsg.includes('operator does not exist') ||
+    err?.code === '42883';
+
+  const userFacingMessage = isDatabaseError
+    ? 'A database error occurred while processing your request. Please try again later.'
+    : (env.NODE_ENV === 'development' ? (errMsg || 'Internal server error') : 'Internal server error');
+
   res.status(500).json({
-    error: env.NODE_ENV === 'development' ? (err.message || 'Internal server error') : 'Internal server error',
-    code: 'INTERNAL_ERROR',
+    error: userFacingMessage,
+    code: isDatabaseError ? 'DATABASE_ERROR' : 'INTERNAL_ERROR',
   });
 };

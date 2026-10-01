@@ -172,77 +172,113 @@ export async function listConnections(
   cursor: string | null,
   limit: number
 ): Promise<PaginationResult<any>> {
-  let queryText = `
-    SELECT ce.friend_id, ce.connected_at, conn.id AS connection_id,
-           u.id, u.name, u.avatar_url, u.bio, u.college_id, u.year_of_study, u.branch, u.looking_for,
-           c.name as college_name
-    FROM connection_edges ce
-    JOIN connections conn ON conn.status = 'accepted'
-      AND ((conn.requester_id = ce.user_id AND conn.receiver_id = ce.friend_id)
-        OR (conn.receiver_id = ce.user_id AND conn.requester_id = ce.friend_id))
-    JOIN users u ON u.id = ce.friend_id
-    LEFT JOIN colleges c ON c.id = u.college_id
-    WHERE ce.user_id = $1
-  `;
-  const params: any[] = [userId];
-
+  let decodedCursor: { connectedAt: string; friendId: string } | null = null;
   if (cursor) {
     const decoded = decodeCursor(cursor);
     if (decoded && decoded.connectedAt && decoded.friendId) {
-      queryText += ` AND (ce.connected_at, ce.friend_id) < ($2, $3)`;
-      params.push(decoded.connectedAt, decoded.friendId);
+      decodedCursor = {
+        connectedAt: decoded.connectedAt,
+        friendId: decoded.friendId,
+      };
     }
   }
 
-  queryText += ` ORDER BY ce.connected_at DESC, ce.friend_id DESC LIMIT $${params.length + 1}`;
-  params.push(limit + 1);
+  const edges = await prisma.connectionEdge.findMany({
+    where: {
+      userId,
+      ...(decodedCursor
+        ? {
+            OR: [
+              {
+                connectedAt: {
+                  lt: new Date(decodedCursor.connectedAt),
+                },
+              },
+              {
+                connectedAt: new Date(decodedCursor.connectedAt),
+                friendId: {
+                  lt: decodedCursor.friendId,
+                },
+              },
+            ],
+          }
+        : {}),
+    },
+    include: {
+      friend: {
+        include: {
+          college: true,
+          skills: {
+            include: { skill: true },
+          },
+        },
+      },
+    },
+    orderBy: [
+      { connectedAt: 'desc' },
+      { friendId: 'desc' },
+    ],
+    take: limit + 1,
+  });
 
-  const rows: any[] = await prisma.$queryRawUnsafe(queryText, ...params);
-
-  const pagination = buildPaginationResult(rows, limit, (row) => ({
-    connectedAt: row.connected_at,
-    friendId: row.friend_id,
+  const pagination = buildPaginationResult(edges, limit, (edge) => ({
+    connectedAt: edge.connectedAt.toISOString(),
+    friendId: edge.friendId,
   }));
 
-  const friendIds = pagination.data.map((r) => r.friend_id);
-  const skillsMap = new Map<string, any[]>();
+  const friendIds = pagination.data.map((e) => e.friendId);
+  const connections = friendIds.length > 0
+    ? await prisma.connection.findMany({
+        where: {
+          status: 'accepted',
+          OR: [
+            { requesterId: userId, receiverId: { in: friendIds } },
+            { receiverId: userId, requesterId: { in: friendIds } },
+          ],
+        },
+        select: {
+          id: true,
+          requesterId: true,
+          receiverId: true,
+        },
+      })
+    : [];
 
-  if (friendIds.length > 0) {
-    const skillsRes = await prisma.userSkill.findMany({
-      where: { userId: { in: friendIds } },
-      include: { skill: true },
-    });
-    for (const row of skillsRes) {
-      if (!skillsMap.has(row.userId)) skillsMap.set(row.userId, []);
-      skillsMap.get(row.userId)!.push({
-        id: row.skill.id,
-        name: row.skill.name,
-        category: row.skill.category,
-        proficiency: row.proficiency,
-      });
-    }
+  const connMap = new Map<string, string>();
+  for (const c of connections) {
+    const otherId = c.requesterId === userId ? c.receiverId : c.requesterId;
+    connMap.set(otherId, c.id);
   }
 
-  const hydratedData = pagination.data.map((r) => ({
-    id: r.id,
-    friendId: r.friend_id,
-    connectionId: r.connection_id,
-    connection_id: r.connection_id,
-    name: r.name,
-    avatarUrl: r.avatar_url,
-    avatar_url: r.avatar_url,
-    bio: r.bio,
-    collegeId: r.college_id,
-    collegeName: r.college_name,
-    college_name: r.college_name,
-    yearOfStudy: r.year_of_study,
-    year_of_study: r.year_of_study,
-    branch: r.branch,
-    lookingFor: r.looking_for,
-    connectedAt: r.connected_at,
-    connected_at: r.connected_at,
-    skills: skillsMap.get(r.id) || [],
-  }));
+  const hydratedData = pagination.data.map((edge) => {
+    const u = edge.friend;
+    const connectionId = connMap.get(edge.friendId) || '';
+    return {
+      id: u.id,
+      friendId: edge.friendId,
+      connectionId,
+      connection_id: connectionId,
+      name: u.name,
+      avatarUrl: u.avatarUrl,
+      avatar_url: u.avatarUrl,
+      bio: u.bio,
+      collegeId: u.collegeId,
+      collegeName: u.college?.name || null,
+      college_name: u.college?.name || null,
+      yearOfStudy: u.yearOfStudy,
+      year_of_study: u.yearOfStudy,
+      branch: u.branch,
+      lookingFor: u.lookingFor,
+      connectedAt: edge.connectedAt,
+      connected_at: edge.connectedAt,
+      skills: (u.skills || []).map((s) => ({
+        id: s.skill.id,
+        name: s.skill.name,
+        category: s.skill.category,
+        proficiency: s.proficiency,
+      })),
+    };
+  });
 
   return {
     ...pagination,
@@ -301,32 +337,56 @@ export async function getMutualConnections(
   cursor: string | null,
   limit: number
 ): Promise<PaginationResult<any>> {
-  let queryText = `
-    SELECT u.id, u.name, u.avatar_url, u.college_id, col.name as college_name
-    FROM connection_edges e1
-    JOIN connection_edges e2 ON e1.friend_id = e2.friend_id
-    JOIN users u ON u.id = e1.friend_id
-    LEFT JOIN colleges col ON col.id = u.college_id
-    WHERE e1.user_id = $1 AND e2.user_id = $2
-  `;
-  const params: any[] = [userId, otherUserId];
+  // Fetch other user's friend IDs
+  const otherFriendEdges = await prisma.connectionEdge.findMany({
+    where: { userId: otherUserId },
+    select: { friendId: true },
+  });
+  const otherFriendIds = otherFriendEdges.map((e) => e.friendId);
 
+  let decodedId: string | null = null;
   if (cursor) {
     const decoded = decodeCursor(cursor);
-    if (decoded && decoded.id) {
-      queryText += ` AND u.id > $3`;
-      params.push(decoded.id);
-    }
+    if (decoded && decoded.id) decodedId = decoded.id;
   }
 
-  queryText += ` ORDER BY u.id ASC LIMIT $${params.length + 1}`;
-  params.push(limit + 1);
+  const mutualEdges = otherFriendIds.length > 0
+    ? await prisma.connectionEdge.findMany({
+        where: {
+          userId,
+          friendId: { in: otherFriendIds },
+          ...(decodedId ? { friendId: { gt: decodedId } } : {}),
+        },
+        include: {
+          friend: {
+            include: {
+              college: true,
+            },
+          },
+        },
+        orderBy: {
+          friendId: 'asc',
+        },
+        take: limit + 1,
+      })
+    : [];
 
-  const rows: any[] = await prisma.$queryRawUnsafe(queryText, ...params);
-
-  return buildPaginationResult(rows, limit, (row) => ({
-    id: row.id,
+  const pagination = buildPaginationResult(mutualEdges, limit, (edge) => ({
+    id: edge.friendId,
   }));
+
+  const data = pagination.data.map((edge) => ({
+    id: edge.friend.id,
+    name: edge.friend.name,
+    avatarUrl: edge.friend.avatarUrl,
+    collegeId: edge.friend.collegeId,
+    collegeName: edge.friend.college?.name || null,
+  }));
+
+  return {
+    ...pagination,
+    data,
+  };
 }
 
 export async function getConnectedUserIds(userId: string): Promise<string[]> {
@@ -349,34 +409,95 @@ export async function getSecondDegreeCandidates(
     via_connection_name: string;
   }>
 > {
-  const rows: Array<{
-    candidate_id: string;
-    mutual_count: number;
-    via_connection_id: string;
-    via_connection_name: string;
-  }> = await prisma.$queryRaw`
-    SELECT 
-      ce2.friend_id AS candidate_id, 
-      count(distinct ce1.friend_id)::int AS mutual_count,
-      min(ce1.friend_id::text) AS via_connection_id,
-      COALESCE((SELECT name FROM users WHERE id = min(ce1.friend_id::text)::uuid), 'A mutual connection') AS via_connection_name
-    FROM connection_edges ce1
-    JOIN connection_edges ce2 ON ce1.friend_id = ce2.user_id
-    WHERE ce1.user_id = ${userId}::uuid
-      AND ce2.friend_id != ${userId}::uuid
-      AND NOT EXISTS (
-        SELECT 1 FROM connection_edges direct 
-        WHERE direct.user_id = ${userId}::uuid 
-          AND direct.friend_id = ce2.friend_id
-      )
-      AND NOT EXISTS (
-        SELECT 1 FROM user_blocks ub
-        WHERE (ub.blocker_id = ${userId}::uuid AND ub.blocked_id = ce2.friend_id)
-           OR (ub.blocker_id = ce2.friend_id AND ub.blocked_id = ${userId}::uuid)
-      )
-    GROUP BY ce2.friend_id
-    ORDER BY mutual_count DESC, ce2.friend_id ASC
-    LIMIT ${limit} OFFSET ${offset};
-  `;
-  return rows;
+  // 1. Fetch user's direct connections
+  const directEdges = await prisma.connectionEdge.findMany({
+    where: { userId },
+    select: { friendId: true },
+  });
+  const directFriendIds = directEdges.map((e) => e.friendId);
+  if (directFriendIds.length === 0) {
+    return [];
+  }
+
+  const directFriendSet = new Set(directFriendIds);
+  directFriendSet.add(userId);
+
+  // 2. Fetch blocked users to exclude
+  const blocks = await prisma.userBlock.findMany({
+    where: {
+      OR: [{ blockerId: userId }, { blockedId: userId }],
+    },
+    select: { blockerId: true, blockedId: true },
+  });
+  const blockedUserIds = new Set(
+    blocks.map((b) => (b.blockerId === userId ? b.blockedId : b.blockerId))
+  );
+
+  // 3. Fetch 2nd degree edges (friends of direct friends)
+  const secondDegreeEdges = await prisma.connectionEdge.findMany({
+    where: {
+      userId: { in: directFriendIds },
+      friendId: { notIn: Array.from(directFriendSet) },
+    },
+    include: {
+      user: {
+        select: {
+          id: true,
+          name: true,
+        },
+      },
+    },
+  });
+
+  // 4. Aggregate mutual friends by candidate in memory
+  const candidateMap = new Map<
+    string,
+    {
+      mutualFriends: Set<string>;
+      minViaId: string;
+      viaName: string;
+    }
+  >();
+
+  for (const edge of secondDegreeEdges) {
+    const candidateId = edge.friendId;
+    if (blockedUserIds.has(candidateId)) {
+      continue;
+    }
+
+    const mutualFriendId = edge.userId;
+    const mutualFriendName = edge.user?.name || 'A mutual connection';
+
+    let entry = candidateMap.get(candidateId);
+    if (!entry) {
+      entry = {
+        mutualFriends: new Set(),
+        minViaId: mutualFriendId,
+        viaName: mutualFriendName,
+      };
+      candidateMap.set(candidateId, entry);
+    }
+
+    entry.mutualFriends.add(mutualFriendId);
+    if (mutualFriendId < entry.minViaId) {
+      entry.minViaId = mutualFriendId;
+      entry.viaName = mutualFriendName;
+    }
+  }
+
+  const candidates = Array.from(candidateMap.entries())
+    .map(([candidate_id, data]) => ({
+      candidate_id,
+      mutual_count: data.mutualFriends.size,
+      via_connection_id: data.minViaId,
+      via_connection_name: data.viaName,
+    }))
+    .sort((a, b) => {
+      if (b.mutual_count !== a.mutual_count) {
+        return b.mutual_count - a.mutual_count;
+      }
+      return a.candidate_id.localeCompare(b.candidate_id);
+    });
+
+  return candidates.slice(offset, offset + limit);
 }
