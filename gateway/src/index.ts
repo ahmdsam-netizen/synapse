@@ -11,13 +11,27 @@ const app = express();
 // Consistent Hash Ring for Chat Microservices
 const chatHashRing = new ConsistentHashRing(CHAT_SERVICE_URLS, { virtualNodes: 100 });
 
-// x-user-id is guaranteed to be present at this point:
-// - REST /api/chat: injected by authenticateToken, enforced by requireAuth
-// - WebSocket /socket.io: injected and enforced by the upgrade handler
-const getRoutingKey = (req: any): string => req.headers['x-user-id'] as string;
+const getRoutingKey = (req: any): string => {
+  const headerUserId = req.headers?.['x-user-id'] as string;
+  if (headerUserId) return headerUserId;
 
-const getTargetChatNode = (req: any): string =>
-  chatHashRing.getNode(getRoutingKey(req)) || CHAT_SERVICE_URLS[0];
+  if (req.url) {
+    try {
+      const parsedUrl = new URL(req.url, 'http://localhost');
+      const queryUserId = parsedUrl.searchParams.get('userId');
+      if (queryUserId) return queryUserId;
+    } catch {
+      const match = req.url.match(/[?&]userId=([^&]+)/);
+      if (match) return decodeURIComponent(match[1]);
+    }
+  }
+  return '';
+};
+
+const getTargetChatNode = (req: any): string => {
+  const key = getRoutingKey(req);
+  return (key ? chatHashRing.getNode(key) : null) || CHAT_SERVICE_URLS[0];
+};
 
 // 1. Security & CORS
 app.use(helmet());
@@ -35,12 +49,22 @@ app.use((req, _res, next) => {
 
 // 3. Central Gateway Authentication Middleware
 const authenticateToken = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  let token: string | undefined;
   const authHeader = req.headers.authorization;
-  if (!authHeader?.startsWith('Bearer ')) {
+  if (authHeader?.startsWith('Bearer ')) {
+    token = authHeader.split(' ')[1];
+  } else if (req.query?.token && typeof req.query.token === 'string') {
+    token = req.query.token;
+  }
+
+  if (!token) {
     return next();
   }
 
-  const token = authHeader.split(' ')[1];
+  if (token.startsWith('Bearer ')) {
+    token = token.substring(7);
+  }
+
   try {
     // M-08: Explicit algorithm restriction prevents alg-confusion attacks.
     const payload = jwt.verify(token, env.JWT_SECRET, { algorithms: ['HS256'] }) as {
@@ -175,11 +199,12 @@ const chatWsProxy = createProxyMiddleware({
   timeout: SOCKET_TIMEOUT_MS,
   on: {
     proxyReq: onProxyReq,
+    proxyReqWs: onProxyReq,
     error: onProxyError,
   },
 });
 
-app.use('/socket.io', chatWsProxy);
+app.use('/socket.io', authenticateToken, chatWsProxy);
 
 // 10. Route: Real-Time Chat REST API (Consistent Hashing)
 app.use(
@@ -215,20 +240,51 @@ server.on('upgrade', (req, socket, head) => {
 
   // Strip any spoofed internal headers from the upgrade request
   delete (req.headers as any)['x-user-id'];
+  delete (req.headers as any)['x-user-email'];
+  delete (req.headers as any)['x-user-college-id'];
   delete (req.headers as any)['x-gateway-secret'];
 
-  // Verify the Bearer token — reject the upgrade if missing or invalid
+  // Verify token from Authorization header or URL query parameter ?token=
+  let token: string | undefined;
   const authHeader = req.headers.authorization;
-  if (!authHeader?.startsWith('Bearer ')) {
+  if (authHeader?.startsWith('Bearer ')) {
+    token = authHeader.split(' ')[1];
+  } else if (req.url) {
+    try {
+      const parsedUrl = new URL(req.url, 'http://localhost');
+      token = parsedUrl.searchParams.get('token') || undefined;
+    } catch {
+      const match = req.url.match(/[?&]token=([^&]+)/);
+      token = match ? decodeURIComponent(match[1]) : undefined;
+    }
+  }
+
+  if (token?.startsWith('Bearer ')) {
+    token = token.substring(7);
+  }
+
+  if (!token) {
     socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
     socket.destroy();
     return;
   }
 
-  const token = authHeader.split(' ')[1];
   try {
-    const payload = jwt.verify(token, env.JWT_SECRET, { algorithms: ['HS256'] }) as { id: string };
+    const payload = jwt.verify(token, env.JWT_SECRET, { algorithms: ['HS256'] }) as {
+      id: string;
+      email?: string;
+      collegeId?: string;
+    };
+
+    if (!payload.id) {
+      socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+      socket.destroy();
+      return;
+    }
+
     (req.headers as any)['x-user-id'] = payload.id;
+    (req.headers as any)['x-user-email'] = payload.email || '';
+    (req.headers as any)['x-user-college-id'] = payload.collegeId || '';
     (req.headers as any)['x-gateway-secret'] = env.GATEWAY_SECRET;
   } catch {
     socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
