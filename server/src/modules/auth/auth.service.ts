@@ -4,6 +4,7 @@ import jwt from 'jsonwebtoken';
 import { prisma } from '../../config/prisma.js';
 import { env } from '../../config/env.js';
 import { UnauthorizedError, ValidationError, ConflictError } from '../../utils/errors.js';
+import { triggerUserReindex } from '../../services/recommendation.client.js';
 
 function formatUser(user: any) {
   return {
@@ -111,6 +112,11 @@ export async function signup(email: string, password: string, name: string) {
 
   const user = formatUser(createdUser);
   const tokens = await generateTokens(user.id, user.email, user.collegeId);
+
+  // Trigger vector embedding creation for new profile asynchronously
+  triggerUserReindex(user.id).catch((err) => {
+    console.warn(`[AuthService] Non-blocking embedding error for user ${user.id}:`, err?.message || err);
+  });
 
   return { user, tokens };
 }

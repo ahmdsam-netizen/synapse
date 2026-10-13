@@ -1,4 +1,3 @@
-import json
 import time
 import psycopg2
 from psycopg2.extras import Json
@@ -79,23 +78,6 @@ def init_vector_database():
     finally:
         conn.close()
 
-def get_counts() -> dict:
-    """Returns vector counts from the independent vector database."""
-    try:
-        conn = get_connection()
-        with conn.cursor() as cur:
-            cur.execute("SELECT COUNT(*) FROM user_embeddings;")
-            user_cnt = cur.fetchone()[0]
-            cur.execute("SELECT COUNT(*) FROM board_posting_embeddings;")
-            board_cnt = cur.fetchone()[0]
-            return {"users": user_cnt, "boards": board_cnt}
-    except Exception as e:
-        print(f"[VectorDB] Error fetching counts: {e}")
-        return {"users": 0, "boards": 0}
-    finally:
-        if 'conn' in locals() and conn:
-            conn.close()
-
 def upsert_user(user_id: str, vector: list[float], metadata: dict):
     conn = get_connection()
     try:
@@ -155,6 +137,36 @@ def has_user_vector(user_id: str) -> bool:
     except Exception as e:
         print(f"[VectorDB] Error checking user vector: {e}")
         return False
+    finally:
+        if 'conn' in locals() and conn:
+            conn.close()
+
+def get_existing_user_vector_ids() -> set[str]:
+    """Returns the set of user IDs that already have vector embeddings."""
+    try:
+        conn = get_connection()
+        with conn.cursor() as cur:
+            cur.execute("SELECT user_id FROM user_embeddings;")
+            rows = cur.fetchall()
+            return {str(r[0]) for r in rows}
+    except Exception as e:
+        print(f"[VectorDB] Error fetching existing user vector IDs: {e}")
+        return set()
+    finally:
+        if 'conn' in locals() and conn:
+            conn.close()
+
+def get_existing_board_vector_ids() -> set[str]:
+    """Returns the set of board posting IDs that already have vector embeddings."""
+    try:
+        conn = get_connection()
+        with conn.cursor() as cur:
+            cur.execute("SELECT posting_id FROM board_posting_embeddings;")
+            rows = cur.fetchall()
+            return {str(r[0]) for r in rows}
+    except Exception as e:
+        print(f"[VectorDB] Error fetching existing board vector IDs: {e}")
+        return set()
     finally:
         if 'conn' in locals() and conn:
             conn.close()

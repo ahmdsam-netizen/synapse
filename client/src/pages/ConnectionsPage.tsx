@@ -2,7 +2,6 @@ import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   MagnifyingGlassIcon,
-  InformationCircleIcon,
   UserGroupIcon,
   AdjustmentsHorizontalIcon,
   ShareIcon,
@@ -28,7 +27,6 @@ export default function ConnectionsPage() {
   const { user: currentUser } = useAuth();
   const [selectedTabIndex, setSelectedTabIndex] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
-  const [secondDegreeSource, setSecondDegreeSource] = useState<string | undefined>(undefined);
 
   // Filter peers directory state
   const [filterSearchQuery, setFilterSearchQuery] = useState('');
@@ -102,13 +100,9 @@ export default function ConnectionsPage() {
       };
 
       const res = await recommendationsApi.getSecondDegree(cursor, 30);
-      setSecondDegreeSource(res.data?.source);
       return normalizeRecs(res.data);
     },
   });
-
-  const isSecondDegreeFallback =
-    secondDegreeSource === 'direct_connections' || secondDegreeSource === 'similarity';
 
   // Remove connection mutation
   const removeMutation = useMutation({
@@ -246,17 +240,6 @@ export default function ConnectionsPage() {
       {/* TAB 2: 2ND-DEGREE NETWORK */}
       {selectedTabIndex === 1 && (
         <div>
-            {isSecondDegreeFallback && (
-              <div className="mb-6 flex items-center p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-800">
-                <InformationCircleIcon className="w-5 h-5 mr-3 flex-shrink-0 text-amber-500" />
-                <p className="text-sm font-medium">
-                  {secondDegreeSource === 'direct_connections'
-                    ? "Showing your connections: no new suggestions right now."
-                    : "Showing similar students: no 2nd-degree suggestions right now."}
-                </p>
-              </div>
-            )}
-
             {isLoadingSecondDegree ? (
               <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
                 {Array.from({ length: 6 }).map((_, i) => (

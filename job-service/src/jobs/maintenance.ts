@@ -1,6 +1,6 @@
 import { Queue, Worker, Job } from 'bullmq';
 import { env } from '../config/env.js';
-import { query } from '../config/database.js';
+import { query, deleteBoardVectors } from '../config/database.js';
 
 const connection = {
   host: new URL(env.REDIS_URL).hostname || 'localhost',
@@ -23,16 +23,19 @@ export const maintenanceQueue = new Queue(MAINTENANCE_QUEUE_NAME, {
 });
 
 /**
- * 1. Postings periodic sweep: deletes expired board postings
+ * 1. Postings periodic sweep: deletes expired board postings and their vector embeddings
  */
 export async function cleanupExpiredPostings(): Promise<number> {
   try {
-    const result = await query(
-      `DELETE FROM board_postings WHERE expires_at IS NOT NULL AND expires_at <= NOW()`
+    const result = await query<{ id: string }>(
+      `DELETE FROM board_postings WHERE expires_at IS NOT NULL AND expires_at <= NOW() RETURNING id`
     );
     const count = result.rowCount || 0;
-    if (count > 0) {
-      console.log(`[JobService:Postings] Cleaned up ${count} expired board posting(s)`);
+    const deletedIds = (result.rows || []).map((r) => r.id);
+
+    if (deletedIds.length > 0) {
+      const vecCount = await deleteBoardVectors(deletedIds);
+      console.log(`[JobService:Postings] Cleaned up ${count} expired board posting(s) and ${vecCount} vector embedding(s)`);
     }
     return count;
   } catch (err: any) {
@@ -42,17 +45,32 @@ export async function cleanupExpiredPostings(): Promise<number> {
 }
 
 /**
- * 2. Groups periodic sweep: deletes expired non-community groups
+ * 2. Groups periodic sweep: deletes expired non-community groups, their postings, and their vector embeddings
  */
 export async function cleanupExpiredGroups(): Promise<number> {
   try {
+    // 1. Fetch all posting IDs belonging to the groups about to be expired
+    const postingsResult = await query<{ id: string }>(
+      `SELECT bp.id FROM board_postings bp
+       JOIN groups g ON bp.group_id = g.id
+       WHERE g.expires_at IS NOT NULL AND g.expires_at <= NOW() AND g.is_community = FALSE`
+    );
+    const postingIds = (postingsResult.rows || []).map((r) => r.id);
+
+    // 2. Delete the expired groups (PostgreSQL CASCADE foreign key removes board_postings in primary DB)
     const result = await query(
       `DELETE FROM groups WHERE expires_at IS NOT NULL AND expires_at <= NOW() AND is_community = FALSE`
     );
     const count = result.rowCount || 0;
-    if (count > 0) {
+
+    // 3. Delete vector embeddings directly from vector database
+    if (postingIds.length > 0) {
+      const vecCount = await deleteBoardVectors(postingIds);
+      console.log(`[JobService:Groups] Cleaned up ${count} expired group(s), along with ${postingIds.length} posting(s) and ${vecCount} vector embedding(s)`);
+    } else if (count > 0) {
       console.log(`[JobService:Groups] Cleaned up ${count} expired group(s)`);
     }
+
     return count;
   } catch (err: any) {
     console.error('[JobService:Groups] Error cleaning up expired groups:', err.message);
@@ -61,7 +79,7 @@ export async function cleanupExpiredGroups(): Promise<number> {
 }
 
 /**
- * 3. Delete single posting by ID when delayed job fires on exact second
+ * 3. Delete single posting by ID when delayed job fires on exact second, and delete its vector embedding
  */
 export async function deleteSinglePosting(postingId: string): Promise<void> {
   try {
@@ -70,7 +88,8 @@ export async function deleteSinglePosting(postingId: string): Promise<void> {
       [postingId]
     );
     if ((result.rowCount || 0) > 0) {
-      console.log(`[JobService:Postings] Deleted expired posting ${postingId} right on schedule`);
+      await deleteBoardVectors([postingId]);
+      console.log(`[JobService:Postings] Deleted expired posting ${postingId} and its vector embedding right on schedule`);
     }
   } catch (err: any) {
     console.error(`[JobService:Postings] Error deleting expired posting ${postingId}:`, err.message);
@@ -78,16 +97,29 @@ export async function deleteSinglePosting(postingId: string): Promise<void> {
 }
 
 /**
- * 4. Delete single group by ID when delayed job fires on exact second
+ * 4. Delete single group by ID when delayed job fires on exact second, and delete all its postings' vector embeddings
  */
 export async function deleteSingleGroup(groupId: string): Promise<void> {
   try {
+    // 1. Fetch all posting IDs under this group before deletion
+    const postingsResult = await query<{ id: string }>(
+      `SELECT id FROM board_postings WHERE group_id = $1`,
+      [groupId]
+    );
+    const postingIds = (postingsResult.rows || []).map((r) => r.id);
+
+    // 2. Delete group (cascades board_postings in primary DB)
     const result = await query(
       `DELETE FROM groups WHERE id = $1 AND is_community = FALSE AND expires_at IS NOT NULL AND expires_at <= NOW()`,
       [groupId]
     );
+
+    // 3. Delete vector embeddings for all postings that belonged to this group
     if ((result.rowCount || 0) > 0) {
-      console.log(`[JobService:Groups] Deleted expired group ${groupId} right on schedule`);
+      if (postingIds.length > 0) {
+        await deleteBoardVectors(postingIds);
+      }
+      console.log(`[JobService:Groups] Deleted expired group ${groupId} and ${postingIds.length} posting vector embedding(s) right on schedule`);
     }
   } catch (err: any) {
     console.error(`[JobService:Groups] Error deleting expired group ${groupId}:`, err.message);

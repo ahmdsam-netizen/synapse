@@ -2,6 +2,7 @@ import { prisma } from '../../config/prisma.js';
 import { NotFoundError, ForbiddenError, BadRequestError } from '../../utils/errors.js';
 import { decodeCursor, buildPaginationResult } from '../../utils/pagination.js';
 import { schedulePostingExpiration, cancelPostingExpiration } from '../../jobs/maintenance.js';
+import { triggerBoardReindex } from '../../services/recommendation.client.js';
 
 async function hydrateBoardPostings(rows: any[], viewerUserId?: string) {
   if (!rows || rows.length === 0) return [];
@@ -510,6 +511,11 @@ export const createPosting = async (userId: string, data: any) => {
 
   await schedulePostingExpiration(posting.id, expiresAt);
 
+  // Trigger vector embedding creation for new board posting asynchronously
+  triggerBoardReindex(posting.id).catch((err) => {
+    console.warn(`[BoardsService] Non-blocking embedding error for posting ${posting.id}:`, err?.message || err);
+  });
+
   return posting;
 };
 
@@ -550,6 +556,11 @@ export const updatePosting = async (postingId: string, userId: string, data: any
   if (updateData.expiresAt) {
     await schedulePostingExpiration(postingId, updateData.expiresAt);
   }
+
+  // Trigger vector embedding update for modified board posting asynchronously
+  triggerBoardReindex(postingId).catch((err) => {
+    console.warn(`[BoardsService] Non-blocking embedding error for posting ${postingId}:`, err?.message || err);
+  });
 
   return updated;
 };

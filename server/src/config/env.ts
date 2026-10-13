@@ -14,6 +14,7 @@ const envSchema = z.object({
   PORT: z.coerce.number().optional().default(3001),
   NODE_ENV: z.enum(['development', 'production', 'test']).optional().default('development'),
   CLIENT_URL: z.string().optional().default('http://localhost:5173'),
+  REC_SERVICE_URL: z.string().optional().default('http://localhost:5000'),
 });
 
 export const env = envSchema.parse(process.env);

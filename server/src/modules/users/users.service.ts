@@ -1,6 +1,7 @@
 import { prisma } from '../../config/prisma.js';
 import { NotFoundError, BadRequestError } from '../../utils/errors.js';
 import { computeCompleteness } from '../../utils/profileCompleteness.js';
+import { triggerUserReindex } from '../../services/recommendation.client.js';
 
 async function recomputeCompleteness(userId: string) {
   const user = await prisma.user.findUnique({
@@ -37,6 +38,11 @@ async function recomputeCompleteness(userId: string) {
   await prisma.user.update({
     where: { id: userId },
     data: { profileCompleteness: completeness },
+  });
+
+  // Trigger vector embedding update for modified profile/skills/interests asynchronously
+  triggerUserReindex(userId).catch((err) => {
+    console.warn(`[UsersService] Non-blocking embedding error for user ${userId}:`, err?.message || err);
   });
 }
 

@@ -1,19 +1,18 @@
-import os
-import time
 import requests
 import threading
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Header, Query, HTTPException
-from src.config import CORE_SERVICE_URL, PORT, GATEWAY_SECRET
+from src.config import CORE_SERVICE_URL, GATEWAY_SECRET
 from src.embeddings import compute_weighted_user_embedding, compute_board_embedding
 from src.vectordb import (
     init_vector_database,
-    get_counts,
     upsert_user,
     upsert_board,
     search_peers,
     search_boards,
     has_user_vector,
+    get_existing_user_vector_ids,
+    get_existing_board_vector_ids,
     rank_second_degree_candidates,
     purge_stale_records,
 )
@@ -35,7 +34,7 @@ def _parse_safe_offset(cursor: str | None) -> int:
         return 0
 
 def run_startup_backfill():
-    """Fetches all users and board postings from core service and computes initial embeddings."""
+    """Fetches users and board postings from core service and computes embeddings only for missing entities."""
     print("[StartupBackfill] Checking and syncing vector backfill...")
     try:
         # 1. Sync users
@@ -48,21 +47,28 @@ def run_startup_backfill():
             users = users_res.json().get("data", [])
             valid_user_ids = [u["id"] for u in users]
             purge_stale_records(active_user_ids=valid_user_ids)
-            print(f"[StartupBackfill] Processing embeddings for {len(users)} users...")
-            for u in users:
-                vec = compute_weighted_user_embedding(u)
-                upsert_user(u["id"], vec, {
-                    "name": u.get("name"),
-                    "college_name": u.get("college_name"),
-                    "bio": u.get("bio"),
-                    "avatar_url": u.get("avatar_url"),
-                    "year_of_study": u.get("year_of_study"),
-                    "branch": u.get("branch"),
-                    "skills": u.get("skills", []),
-                    "interests": u.get("interests", []),
-                    "looking_for": u.get("looking_for")
-                })
-            print(f"[StartupBackfill] Successfully indexed {len(users)} users into Vector DB!")
+
+            existing_user_ids = get_existing_user_vector_ids()
+            missing_users = [u for u in users if str(u["id"]) not in existing_user_ids]
+
+            if missing_users:
+                print(f"[StartupBackfill] Processing embeddings for {len(missing_users)} users without existing embeddings...")
+                for u in missing_users:
+                    vec = compute_weighted_user_embedding(u)
+                    upsert_user(u["id"], vec, {
+                        "name": u.get("name"),
+                        "college_name": u.get("college_name"),
+                        "bio": u.get("bio"),
+                        "avatar_url": u.get("avatar_url"),
+                        "year_of_study": u.get("year_of_study"),
+                        "branch": u.get("branch"),
+                        "skills": u.get("skills", []),
+                        "interests": u.get("interests", []),
+                        "looking_for": u.get("looking_for")
+                    })
+                print(f"[StartupBackfill] Successfully indexed {len(missing_users)} new users into Vector DB!")
+            else:
+                print(f"[StartupBackfill] All {len(users)} users already have embeddings. Skipping user computation.")
 
         # 2. Sync boards
         boards_res = requests.get(
@@ -72,24 +78,33 @@ def run_startup_backfill():
         )
         if boards_res.status_code == 200:
             boards = boards_res.json().get("data", [])
-            print(f"[StartupBackfill] Processing embeddings for {len(boards)} board postings...")
-            for b in boards:
-                vec = compute_board_embedding(b)
-                upsert_board(b["id"], vec, {
-                    "title": b.get("title"),
-                    "description": b.get("description"),
-                    "group_id": b.get("groupId") or b.get("group_id"),
-                    "group_name": b.get("groupName") or b.get("group_name"),
-                    "creator_id": b.get("creatorId") or b.get("creator_id"),
-                    "roles_needed": b.get("rolesNeeded") or b.get("roles_needed", []),
-                    "required_skills": b.get("requiredSkills") or b.get("required_skills", []),
-                    "required_interests": b.get("requiredInterests") or b.get("required_interests", []),
-                    "slots_total": b.get("slotsTotal") or b.get("slots_total", 1),
-                    "slots_filled": b.get("slotsFilled") or b.get("slots_filled", 0),
-                    "expires_at": b.get("expiresAt") or b.get("expires_at"),
-                    "created_at": b.get("createdAt") or b.get("created_at")
-                })
-            print(f"[StartupBackfill] Successfully indexed {len(boards)} board postings into Vector DB!")
+            valid_board_ids = [b["id"] for b in boards]
+            purge_stale_records(active_board_ids=valid_board_ids)
+
+            existing_board_ids = get_existing_board_vector_ids()
+            missing_boards = [b for b in boards if str(b["id"]) not in existing_board_ids]
+
+            if missing_boards:
+                print(f"[StartupBackfill] Processing embeddings for {len(missing_boards)} board postings without existing embeddings...")
+                for b in missing_boards:
+                    vec = compute_board_embedding(b)
+                    upsert_board(b["id"], vec, {
+                        "title": b.get("title"),
+                        "description": b.get("description"),
+                        "group_id": b.get("groupId") or b.get("group_id"),
+                        "group_name": b.get("groupName") or b.get("group_name"),
+                        "creator_id": b.get("creatorId") or b.get("creator_id"),
+                        "roles_needed": b.get("rolesNeeded") or b.get("roles_needed", []),
+                        "required_skills": b.get("requiredSkills") or b.get("required_skills", []),
+                        "required_interests": b.get("requiredInterests") or b.get("required_interests", []),
+                        "slots_total": b.get("slotsTotal") or b.get("slots_total", 1),
+                        "slots_filled": b.get("slotsFilled") or b.get("slots_filled", 0),
+                        "expires_at": b.get("expiresAt") or b.get("expires_at"),
+                        "created_at": b.get("createdAt") or b.get("created_at")
+                    })
+                print(f"[StartupBackfill] Successfully indexed {len(missing_boards)} new board postings into Vector DB!")
+            else:
+                print(f"[StartupBackfill] All {len(boards)} board postings already have embeddings. Skipping board computation.")
 
     except Exception as e:
         print(f"[StartupBackfill] Error during backfill: {e}")
@@ -122,33 +137,10 @@ def ensure_user_indexed(user_id: str):
         except Exception as e:
             print(f"[OnDemandIndex] Error indexing user: {e}")
 
-_backfill_lock = threading.Lock()
-_is_backfilling = False
-
 def start_background_backfill():
-    global _is_backfilling
-    with _backfill_lock:
-        if _is_backfilling:
-            return
-        _is_backfilling = True
-
-    def _worker():
-        global _is_backfilling
-        try:
-            run_startup_backfill()
-        finally:
-            with _backfill_lock:
-                _is_backfilling = False
-
-    t = threading.Thread(target=_worker, daemon=True)
+    """Launches startup vector backfill in a non-blocking background daemon thread."""
+    t = threading.Thread(target=run_startup_backfill, daemon=True)
     t.start()
-
-def ensure_data_populated():
-    """If vector database has 0 or 1 user, trigger backfill from core-service asynchronously."""
-    counts = get_counts()
-    if counts.get("users", 0) <= 1 or counts.get("boards", 0) == 0:
-        print(f"[AutoBackfill] Vector database needs syncing (current counts: {counts}). Starting background backfill...")
-        start_background_backfill()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -184,7 +176,6 @@ def get_similarity_recommendations(
         raise HTTPException(status_code=401, detail="Missing user identity")
 
     active_user_id = x_user_id
-    ensure_data_populated()
     ensure_user_indexed(active_user_id)
 
     offset = _parse_safe_offset(cursor)
@@ -223,7 +214,6 @@ def get_second_degree_recommendations(
         raise HTTPException(status_code=401, detail="Missing user identity")
 
     active_user_id = x_user_id
-    ensure_data_populated()
     ensure_user_indexed(active_user_id)
 
     offset = _parse_safe_offset(cursor)
@@ -251,25 +241,11 @@ def get_second_degree_recommendations(
             "source": "second_degree"
         }
 
-    # 3. Fallback: If user has no 2nd-degree connections in the graph, fall back to similarity
-    exclude_ids = []
-    try:
-        conn_res = requests.get(
-            f"{CORE_SERVICE_URL}/api/internal/connections/{active_user_id}",
-            headers=_internal_headers(),
-            timeout=3
-        )
-        if conn_res.status_code == 200:
-            exclude_ids = conn_res.json().get("data", [])
-    except Exception:
-        pass
-
-    matches = search_peers(active_user_id, exclude_ids=exclude_ids, limit=limit, offset=offset)
-    next_cursor = str(offset + len(matches)) if len(matches) == limit else None
+    # No 2nd-degree connections in the graph: return empty list
     return {
-        "data": matches,
-        "nextCursor": next_cursor,
-        "source": "similarity"
+        "data": [],
+        "nextCursor": None,
+        "source": "second_degree"
     }
 
 @app.get("/recommendations/boards")
@@ -285,7 +261,6 @@ def get_matched_boards(
         raise HTTPException(status_code=401, detail="Missing user identity")
 
     active_user_id = x_user_id
-    ensure_data_populated()
     ensure_user_indexed(active_user_id)
 
     offset = _parse_safe_offset(cursor)

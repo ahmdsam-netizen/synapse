@@ -2,7 +2,7 @@ import apiClient from './client';
 import type { RecommendedUser, BoardPosting, PaginatedResponse } from '../types';
 
 export interface RecommendationResponse extends PaginatedResponse<RecommendedUser> {
-  source?: 'second_degree' | 'direct_connections' | 'similarity';
+  source?: 'second_degree' | 'similarity';
 }
 
 export const recommendationsApi = {
