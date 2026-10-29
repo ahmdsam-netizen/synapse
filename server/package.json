@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "migrate": "tsx scripts/migrate.ts",
+    "seed:sayem": "tsx scripts/seed-sayem.ts",
     "predev": "npm run migrate",
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
