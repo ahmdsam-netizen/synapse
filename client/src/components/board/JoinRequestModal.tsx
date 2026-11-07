@@ -36,7 +36,7 @@ export function JoinRequestModal({ open, onClose, posting, onSuccess }: JoinRequ
   };
 
   return (
-    <Modal open={open} onClose={onClose} title={`Request to join ${posting.groupName || 'group'}`}>
+    <Modal open={open} onClose={onClose} title={`Request to join ${posting.groupName || 'community'}`}>
       <form onSubmit={handleSubmit} className="space-y-6">
         <div>
           <label htmlFor="message" className="block text-sm font-medium leading-6 text-gray-900">

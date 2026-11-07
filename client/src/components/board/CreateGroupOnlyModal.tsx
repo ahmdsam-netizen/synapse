@@ -16,7 +16,7 @@ export function CreateGroupOnlyModal({ open, onClose, onSuccess }: CreateGroupOn
   const [groupData, setGroupData] = useState({
     name: '',
     description: '',
-    visibility: 'global' as 'global' | 'college',
+    visibility: 'global' as const,
     maxMembers: 8,
     durationDays: 7,
   });
@@ -78,37 +78,15 @@ export function CreateGroupOnlyModal({ open, onClose, onSuccess }: CreateGroupOn
           />
         </div>
 
-        {/* Visibility Selector Buttons */}
-        <div>
-          <label className="block text-sm font-semibold text-gray-900 mb-1.5">Visibility *</label>
-          <div className="grid grid-cols-2 gap-3">
-            <button
-              type="button"
-              onClick={() => setGroupData((prev) => ({ ...prev, visibility: 'global' }))}
-              className={cn(
-                "py-3 px-4 rounded-lg border text-sm font-semibold transition-colors cursor-pointer text-left flex flex-col justify-center",
-                groupData.visibility === 'global'
-                  ? "bg-primary-50 border-primary-600 text-primary-900 shadow-xs"
-                  : "bg-white border-gray-200 text-gray-700 hover:border-gray-300 hover:bg-gray-50"
-              )}
-            >
-              <span>#global</span>
-              <span className="text-[11px] font-normal text-gray-500 mt-0.5">Open to all verified colleges</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setGroupData((prev) => ({ ...prev, visibility: 'college' }))}
-              className={cn(
-                "py-3 px-4 rounded-lg border text-sm font-semibold transition-colors cursor-pointer text-left flex flex-col justify-center",
-                groupData.visibility === 'college'
-                  ? "bg-primary-50 border-primary-600 text-primary-900 shadow-xs"
-                  : "bg-white border-gray-200 text-gray-700 hover:border-gray-300 hover:bg-gray-50"
-              )}
-            >
-              <span>#college</span>
-              <span className="text-[11px] font-normal text-gray-500 mt-0.5">Restricted to your campus only</span>
-            </button>
+        {/* Global Visibility */}
+        <div className="flex items-center justify-between rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-600">
+          <div>
+            <span className="font-semibold text-gray-900 block">Visibility</span>
+            <span className="text-gray-500 text-[11px]">Global - Open to all verified student peers</span>
           </div>
+          <span className="inline-flex items-center rounded-md bg-primary-50 px-2.5 py-1 text-xs font-semibold text-primary-800 border border-primary-200">
+            Global
+          </span>
         </div>
 
         {/* Duration Selector Buttons */}

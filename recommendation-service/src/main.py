@@ -154,7 +154,7 @@ async def lifespan(app: FastAPI):
     # Shutdown
     print("[AppShutdown] Recommendation service shutting down.")
 
-app = FastAPI(title="Synapse Recommendation Service", lifespan=lifespan)
+app = FastAPI(title="Date&Innovate Recommendation Service", lifespan=lifespan)
 
 # Health endpoint: safe binary status check without leaking DB volume metrics (M-16)
 @app.get("/health")

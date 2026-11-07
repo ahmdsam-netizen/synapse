@@ -1,10 +1,10 @@
-import { Routes, Route } from 'react-router-dom';
+import { Routes, Route, Navigate } from 'react-router-dom';
 import AppLayout from './components/layout/AppLayout';
 import ProtectedRoute from './components/layout/ProtectedRoute';
 import LoginPage from './pages/LoginPage';
 import SignupPage from './pages/SignupPage';
 import HomePage from './pages/HomePage';
-import RecommendationsPage from './pages/RecommendationsPage';
+import ExplorePage from './pages/ExplorePage';
 import BoardPage from './pages/BoardPage';
 import ProfilePage from './pages/ProfilePage';
 import ConnectionsPage from './pages/ConnectionsPage';
@@ -32,7 +32,8 @@ export default function App() {
           <Route path="/" element={<HomePage />} />
           <Route path="/boards" element={<BoardPage />} />
           <Route path="/communities" element={<CommunitiesPage />} />
-          <Route path="/recommendations" element={<RecommendationsPage />} />
+          <Route path="/explore" element={<ExplorePage />} />
+          <Route path="/recommendations" element={<Navigate to="/explore" replace />} />
           <Route path="/connections" element={<ConnectionsPage />} />
           <Route path="/peers" element={<ConnectionsPage />} />
           <Route path="/requests" element={<RequestsPage />} />

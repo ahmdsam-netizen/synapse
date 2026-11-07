@@ -7,6 +7,7 @@ import {
   UserGroupIcon,
   XMarkIcon,
   PlusIcon,
+  InformationCircleIcon,
 } from '@heroicons/react/24/outline';
 import { communitiesApi } from '../api/communities';
 import { Community } from '../types';
@@ -76,11 +77,11 @@ export default function CommunitiesPage() {
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
       {/* Header */}
-      <div className="mb-8 flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+      <div className="mb-6 flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">#communities</h1>
           <p className="mt-1 text-sm text-gray-500">
-            Permanent global student communities across institutions. Join open networks and societies up to 1,000 members.
+            Student communities across institutions. Join open networks, labs, and interest groups.
           </p>
         </div>
         <button
@@ -91,6 +92,21 @@ export default function CommunitiesPage() {
           <PlusIcon className="h-4 w-4" />
           <span>Create Community</span>
         </button>
+      </div>
+
+      {/* Community Info Section */}
+      <div className="mb-8 rounded-xl border border-gray-200 bg-white p-4">
+        <div className="flex items-start gap-3">
+          <div className="rounded-lg bg-primary-50 p-2 text-primary-700 shrink-0">
+            <InformationCircleIcon className="h-5 w-5" />
+          </div>
+          <div className="text-xs text-gray-600 space-y-0.5">
+            <h4 className="font-semibold text-gray-900 text-sm">Community Guidelines & Info</h4>
+            <p>
+              Communities can be both permanent and temporary based on organizer goals. Member limits can be customized by creators. In this platform, there could be at max thousand members in a community.
+            </p>
+          </div>
+        </div>
       </div>
 
       {/* Tabs / Switcher Buttons */}

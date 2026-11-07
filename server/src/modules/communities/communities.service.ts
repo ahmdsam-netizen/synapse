@@ -3,8 +3,19 @@ import { NotFoundError, ForbiddenError, BadRequestError } from '../../utils/erro
 
 export const createCommunity = async (
   userId: string,
-  data: { name: string; description?: string | null }
+  data: {
+    name: string;
+    description?: string | null;
+    type?: 'permanent' | 'temporary';
+    durationDays?: number | null;
+    maxMembers?: number;
+  }
 ) => {
+  const isTemporary = data.type === 'temporary';
+  const durationDays = data.durationDays ? Number(data.durationDays) : 30;
+  const expiresAt = isTemporary ? new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000) : null;
+  const maxMembers = data.maxMembers ? Math.min(Math.max(Number(data.maxMembers), 2), 1000) : 1000;
+
   return prisma.$transaction(async (tx) => {
     const community = await tx.group.create({
       data: {
@@ -13,8 +24,8 @@ export const createCommunity = async (
         creatorId: userId,
         collegeId: null,
         visibility: 'global',
-        maxMembers: 1000,
-        expiresAt: null,
+        maxMembers,
+        expiresAt,
         isCommunity: true,
       },
     });
@@ -31,6 +42,12 @@ export const createCommunity = async (
       ...community,
       isCommunity: true,
       is_community: true,
+      isTemporary,
+      is_temporary: isTemporary,
+      expiresAt,
+      expires_at: expiresAt,
+      maxMembers,
+      max_members: maxMembers,
       memberCount: 1,
       member_count: 1,
       isMember: true,
@@ -40,13 +57,23 @@ export const createCommunity = async (
 };
 
 export const getCommunities = async (userId: string, search?: string) => {
-  const where: any = { isCommunity: true };
+  const where: any = {
+    isCommunity: true,
+    OR: [
+      { expiresAt: null },
+      { expiresAt: { gt: new Date() } },
+    ],
+  };
 
   if (search && search.trim()) {
     const term = search.trim();
-    where.OR = [
-      { name: { contains: term, mode: 'insensitive' } },
-      { description: { contains: term, mode: 'insensitive' } },
+    where.AND = [
+      {
+        OR: [
+          { name: { contains: term, mode: 'insensitive' } },
+          { description: { contains: term, mode: 'insensitive' } },
+        ],
+      },
     ];
   }
 
@@ -70,7 +97,12 @@ export const getCommunities = async (userId: string, search?: string) => {
         description: g.description,
         creator_id: g.creatorId,
         visibility: g.visibility,
-        max_members: g.maxMembers,
+        maxMembers: g.maxMembers || 1000,
+        max_members: g.maxMembers || 1000,
+        expiresAt: g.expiresAt,
+        expires_at: g.expiresAt,
+        isTemporary: Boolean(g.expiresAt),
+        is_temporary: Boolean(g.expiresAt),
         status: g.status,
         created_at: g.createdAt,
         isCommunity: true,
@@ -88,7 +120,13 @@ export const getMyCommunities = async (userId: string) => {
   const memberships = await prisma.groupMember.findMany({
     where: {
       userId,
-      group: { isCommunity: true },
+      group: {
+        isCommunity: true,
+        OR: [
+          { expiresAt: null },
+          { expiresAt: { gt: new Date() } },
+        ],
+      },
     },
     include: {
       group: {
@@ -106,7 +144,12 @@ export const getMyCommunities = async (userId: string) => {
     description: m.group.description,
     creator_id: m.group.creatorId,
     visibility: m.group.visibility,
-    max_members: m.group.maxMembers,
+    maxMembers: m.group.maxMembers || 1000,
+    max_members: m.group.maxMembers || 1000,
+    expiresAt: m.group.expiresAt,
+    expires_at: m.group.expiresAt,
+    isTemporary: Boolean(m.group.expiresAt),
+    is_temporary: Boolean(m.group.expiresAt),
     status: m.group.status,
     created_at: m.group.createdAt,
     isCommunity: true,
@@ -144,12 +187,14 @@ export const getCommunityDetail = async (communityId: string, viewerId: string) 
     creator_id: community.creatorId,
     college_id: community.collegeId,
     visibility: 'global',
-    maxMembers: 1000,
-    max_members: 1000,
+    maxMembers: community.maxMembers || 1000,
+    max_members: community.maxMembers || 1000,
     status: community.status,
     created_at: community.createdAt,
-    expiresAt: null,
-    expires_at: null,
+    expiresAt: community.expiresAt,
+    expires_at: community.expiresAt,
+    isTemporary: Boolean(community.expiresAt),
+    is_temporary: Boolean(community.expiresAt),
     isCommunity: true,
     is_community: true,
     viewerId,
@@ -184,8 +229,12 @@ export const joinCommunity = async (communityId: string, userId: string) => {
     if (community.status === 'closed') {
       throw new BadRequestError('This community is closed');
     }
-    if (community._count.members >= 1000) {
-      throw new BadRequestError('Community has reached the maximum capacity of 1,000 members');
+    if (community.expiresAt && community.expiresAt <= new Date()) {
+      throw new BadRequestError('This community has expired');
+    }
+    const maxCapacity = community.maxMembers || 1000;
+    if (community._count.members >= maxCapacity) {
+      throw new BadRequestError('Community has reached its member limit');
     }
 
     await tx.groupMember.upsert({

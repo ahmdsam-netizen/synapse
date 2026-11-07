@@ -11,6 +11,7 @@ import searchRoutes from './modules/search/search.routes.js';
 import groupRoutes from './modules/groups/groups.routes.js';
 import boardRoutes from './modules/boards/boards.routes.js';
 import communityRoutes from './modules/communities/communities.routes.js';
+import dropRoutes from './modules/drops/drops.routes.js';
 
 const app = express();
 
@@ -33,6 +34,7 @@ app.use('/api/search', searchRoutes);
 app.use('/api/groups', groupRoutes);
 app.use('/api/boards', boardRoutes);
 app.use('/api/communities', communityRoutes);
+app.use('/api/drops', dropRoutes);
 
 // Internal microservice communication endpoints for Recommendation Service
 // C-02: Protected by a shared GATEWAY_SECRET header check. These routes must

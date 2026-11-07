@@ -3,10 +3,10 @@ import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { Modal } from '../shared/Modal';
-import { groupsApi } from '../../api/groups';
+import { communitiesApi } from '../../api/communities';
 import { boardsApi } from '../../api/boards';
 import { usersApi } from '../../api/users';
-import { Group, Skill, Interest } from '../../types';
+import { Community, Skill, Interest } from '../../types';
 import { useDebounce } from '../../hooks/useDebounce';
 import { cn } from '../../lib/utils';
 
@@ -14,27 +14,33 @@ interface CreatePostingOnlyModalProps {
   open: boolean;
   onClose: () => void;
   initialGroupId?: string;
+  initialCommunityId?: string;
   onRequestCreateGroup?: () => void;
+  onRequestCreateCommunity?: () => void;
 }
 
 export function CreatePostingOnlyModal({
   open,
   onClose,
   initialGroupId,
+  initialCommunityId,
   onRequestCreateGroup,
+  onRequestCreateCommunity,
 }: CreatePostingOnlyModalProps) {
   const queryClient = useQueryClient();
+  const targetId = initialCommunityId || initialGroupId;
+  const onRequestCreate = onRequestCreateCommunity || onRequestCreateGroup;
 
-  const { data: groupsData, isLoading: isLoadingGroups } = useQuery({
-    queryKey: ['groups', 'me'],
-    queryFn: () => groupsApi.getMyGroups(),
+  const { data: communitiesData, isLoading: isLoadingCommunities } = useQuery({
+    queryKey: ['communities', 'me'],
+    queryFn: () => communitiesApi.getMyCommunities(),
     enabled: open,
   });
 
-  const rawGroups: Group[] = (groupsData?.data as any)?.data || groupsData?.data || [];
-  const adminGroups = rawGroups.filter((g: any) => g.userRole === 'admin' || g.role === 'admin');
+  const rawCommunities: Community[] = (communitiesData?.data as any)?.data || communitiesData?.data || [];
+  const adminCommunities = rawCommunities.filter((c: any) => c.userRole === 'admin' || (c as any).role === 'admin');
 
-  const [selectedGroupId, setSelectedGroupId] = useState<string>(initialGroupId || '');
+  const [selectedGroupId, setSelectedGroupId] = useState<string>(targetId || '');
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [rolesNeededText, setRolesNeededText] = useState('');
@@ -55,12 +61,12 @@ export function CreatePostingOnlyModal({
   const [isInterestFocused, setIsInterestFocused] = useState(false);
 
   useEffect(() => {
-    if (initialGroupId) {
-      setSelectedGroupId(initialGroupId);
-    } else if (adminGroups.length > 0 && !selectedGroupId) {
-      setSelectedGroupId(adminGroups[0].id);
+    if (targetId) {
+      setSelectedGroupId(targetId);
+    } else if (adminCommunities.length > 0 && !selectedGroupId) {
+      setSelectedGroupId(adminCommunities[0].id);
     }
-  }, [initialGroupId, adminGroups, selectedGroupId]);
+  }, [targetId, adminCommunities, selectedGroupId]);
 
   const addSkillByName = (name: string) => {
     const trimmed = name.trim();
@@ -168,7 +174,9 @@ export function CreatePostingOnlyModal({
     onSuccess: () => {
       toast.success('Posting created successfully!');
       queryClient.invalidateQueries({ queryKey: ['board'] });
+      queryClient.invalidateQueries({ queryKey: ['communities'] });
       if (selectedGroupId) {
+        queryClient.invalidateQueries({ queryKey: ['communities', selectedGroupId] });
         queryClient.invalidateQueries({ queryKey: ['groups', selectedGroupId] });
       }
       handleClose();
@@ -198,7 +206,7 @@ export function CreatePostingOnlyModal({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedGroupId) {
-      toast.error('Please select a group for this posting');
+      toast.error('Please select a community for this posting');
       return;
     }
     if (!title.trim()) {
@@ -209,17 +217,17 @@ export function CreatePostingOnlyModal({
   };
 
   return (
-    <Modal open={open} onClose={handleClose} title="Create Group Posting" size="xl">
-      {!isLoadingGroups && adminGroups.length === 0 && !initialGroupId ? (
+    <Modal open={open} onClose={handleClose} title="Create Community Posting" size="xl">
+      {!isLoadingCommunities && adminCommunities.length === 0 && !targetId ? (
         <div className="text-center py-6">
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-amber-100 text-amber-600 mb-4">
             <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
           </div>
-          <h3 className="text-base font-semibold text-gray-900">No Admin Groups Found</h3>
+          <h3 className="text-base font-semibold text-gray-900">No Admin Communities Found</h3>
           <p className="mt-2 text-sm text-gray-500 max-w-sm mx-auto">
-            You must be an admin of a group to publish a recruitment posting on the board.
+            You must be an admin of a community to publish a recruitment posting on the board.
           </p>
           <div className="mt-6 flex justify-center gap-3">
             <button
@@ -229,24 +237,24 @@ export function CreatePostingOnlyModal({
             >
               Cancel
             </button>
-            {onRequestCreateGroup ? (
+            {onRequestCreate ? (
               <button
                 type="button"
                 onClick={() => {
                   handleClose();
-                  onRequestCreateGroup();
+                  onRequestCreate();
                 }}
                 className="rounded-lg bg-primary-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-primary-700 cursor-pointer"
               >
-                Create a Group First
+                Create a Community First
               </button>
             ) : (
               <Link
-                to="/"
+                to="/communities"
                 onClick={handleClose}
                 className="rounded-lg bg-primary-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-primary-700"
               >
-                Go to My Groups
+                Go to Communities
               </Link>
             )}
           </div>
@@ -254,12 +262,12 @@ export function CreatePostingOnlyModal({
       ) : (
         <form onSubmit={handleSubmit} className="space-y-4 max-h-[75vh] overflow-y-auto px-1">
           <div>
-            <label className="block text-sm font-semibold text-gray-900 mb-1">Group *</label>
-            {initialGroupId ? (
+            <label className="block text-sm font-semibold text-gray-900 mb-1">Community *</label>
+            {targetId ? (
               <input
                 type="text"
                 disabled
-                value={adminGroups.find((g) => g.id === initialGroupId)?.name || 'Current Group'}
+                value={adminCommunities.find((c) => c.id === targetId)?.name || 'Current Community'}
                 className="block w-full rounded-lg border border-gray-300 bg-gray-100 py-2.5 px-3.5 text-gray-700 sm:text-sm cursor-not-allowed"
               />
             ) : (
@@ -270,11 +278,11 @@ export function CreatePostingOnlyModal({
                 className="block w-full rounded-lg border border-gray-300 py-2.5 px-3.5 text-gray-900 shadow-xs focus:border-primary-600 focus:outline-none focus:ring-1 focus:ring-primary-600 sm:text-sm bg-white"
               >
                 <option value="" disabled>
-                  Select a group you manage
+                  Select a community you manage
                 </option>
-                {adminGroups.map((g) => (
-                  <option key={g.id} value={g.id}>
-                    {g.name}
+                {adminCommunities.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
                   </option>
                 ))}
               </select>

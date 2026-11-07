@@ -173,7 +173,7 @@ app.use(
 // 8. Route: Core Application Entities -> Core Platform Service
 // H-05: All core entity routes now require a valid authenticated user.
 app.use(
-  ['/api/users', '/api/connections', '/api/groups', '/api/boards', '/api/search', '/api/communities'],
+  ['/api/users', '/api/connections', '/api/groups', '/api/boards', '/api/search', '/api/communities', '/api/drops'],
   authenticateToken,
   requireAuth,
   createProxyMiddleware({

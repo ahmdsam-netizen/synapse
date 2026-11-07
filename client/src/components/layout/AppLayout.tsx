@@ -11,7 +11,7 @@ export default function AppLayout() {
       <footer className="border-t border-gray-200 bg-white py-6">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-gray-500">
           <div>
-            &copy; {new Date().getFullYear()} Synapse. Verified academic collaboration network.
+            &copy; {new Date().getFullYear()} Date&amp;Innovate. Verified academic collaboration network.
           </div>
           <div className="flex items-center gap-6">
             <Link to="/privacy" className="hover:text-primary-600 transition-colors">

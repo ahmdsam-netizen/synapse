@@ -8,7 +8,7 @@ export default function PrivacyPolicyPage() {
           to="/"
           className="inline-flex items-center text-sm font-medium text-primary-600 hover:text-primary-700 mb-4"
         >
-          &larr; Back to Synapse
+          &larr; Back to Date&amp;Innovate
         </Link>
         <h1 className="text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">Privacy Policy</h1>
         <p className="mt-2 text-sm text-gray-500">Effective Date: September 22, 2026</p>
@@ -18,7 +18,7 @@ export default function PrivacyPolicyPage() {
         <section className="space-y-3">
           <h2 className="text-xl font-semibold text-gray-900">1. Overview</h2>
           <p>
-            Synapse provides a recommendation-based connection platform tailored for verified university and college students. 
+            Date&amp;Innovate provides a recommendation-based connection platform tailored for verified university and college students. 
             This Privacy Policy explains how we collect, store, process, and protect your information when you access or use 
             our application, APIs, and associated services.
           </p>
@@ -93,7 +93,7 @@ export default function PrivacyPolicyPage() {
         <section className="space-y-3">
           <h2 className="text-xl font-semibold text-gray-900">6. Your Rights and Data Controls</h2>
           <p>
-            You have full control over your personal data on Synapse:
+            You have full control over your personal data on Date&amp;Innovate:
           </p>
           <ul className="list-disc pl-6 space-y-2">
             <li>You can view, edit, or remove skills, interests, and portfolio work items at any time through your Profile page.</li>
@@ -116,7 +116,7 @@ export default function PrivacyPolicyPage() {
             For privacy inquiries, account data deletion, or compliance verification, contact:
           </p>
           <p className="font-medium text-gray-900">
-            Privacy Operations: <span className="text-primary-600">privacy@synapseplatform.edu</span>
+            Privacy Operations: <span className="text-primary-600">privacy@dateandinnovate.edu</span>
           </p>
         </section>
       </div>

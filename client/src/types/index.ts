@@ -96,7 +96,7 @@ export interface Group {
   description: string | null;
   creatorId: string;
   collegeId: string | null;
-  visibility: 'global' | 'college';
+  visibility: 'global';
   maxMembers: number;
   status: 'open' | 'closed';
   memberCount: number;
@@ -128,8 +128,10 @@ export interface Community {
   userRole?: 'admin' | 'member' | null;
   createdAt: string;
   created_at?: string;
-  expiresAt?: null;
-  expires_at?: null;
+  expiresAt?: string | null;
+  expires_at?: string | null;
+  isTemporary?: boolean;
+  is_temporary?: boolean;
   members?: Array<{
     id: string;
     name: string;
@@ -223,5 +225,24 @@ export interface GroupInvite {
   status: 'pending' | 'accepted' | 'declined';
   createdAt: string;
   updatedAt: string;
+}
+
+export interface Drop {
+  id: string;
+  userId: string;
+  content: string;
+  createdAt: string;
+  user: {
+    id: string;
+    name: string | null;
+    avatarUrl?: string | null;
+    avatar_url?: string | null;
+    branch?: string | null;
+    collegeName?: string | null;
+    college?: { name: string } | null;
+  };
+  upVotes: number;
+  downVotes: number;
+  userVote: 'up' | 'down' | null;
 }
 
