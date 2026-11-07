@@ -177,6 +177,7 @@ export const getGlobalBoard = async (
 
   const where: any = {
     status: 'open',
+    group: { isCommunity: true },
     OR: [
       { expiresAt: null },
       { expiresAt: { gt: new Date() } },
@@ -314,6 +315,7 @@ export const getMyPostings = async (
 
   const where: any = {
     group: {
+      isCommunity: true,
       OR: [
         { creatorId: userId },
         { members: { some: { userId, role: 'admin' } } },
@@ -465,8 +467,8 @@ export const createPosting = async (userId: string, data: any) => {
     where: { id: data.groupId },
     select: { isCommunity: true },
   });
-  if (group && group.isCommunity) {
-    throw new BadRequestError('Posters/postings cannot be created for communities.');
+  if (!group || !group.isCommunity) {
+    throw new BadRequestError('Postings can only be created for communities.');
   }
 
   const membership = await prisma.groupMember.findUnique({
@@ -474,7 +476,7 @@ export const createPosting = async (userId: string, data: any) => {
     select: { role: true },
   });
   if (!membership || membership.role !== 'admin') {
-    throw new ForbiddenError('Only admins can create postings');
+    throw new ForbiddenError('Only community admins can create postings');
   }
 
   const expiresInHours = Number(data.expiresInHours) || 72;
@@ -658,7 +660,7 @@ export const submitJoinRequest = async (
   const isMember = await prisma.groupMember.findUnique({
     where: { groupId_userId: { groupId, userId } },
   });
-  if (isMember) throw new BadRequestError('You are already a member of this group');
+  if (isMember) throw new BadRequestError('You are already a member of this community');
 
   const existingRequest = await prisma.joinRequest.findUnique({
     where: { postingId_userId: { postingId, userId } },
@@ -725,6 +727,14 @@ export const approveRequest = async (requestId: string, adminId: string) => {
     });
     if (!membership || membership.role !== 'admin') {
       throw new ForbiddenError('Only admins can approve requests');
+    }
+
+    const community = await tx.group.findUnique({
+      where: { id: request.groupId },
+      include: { _count: { select: { members: true } } },
+    });
+    if (community && community.maxMembers && community._count.members >= community.maxMembers) {
+      throw new BadRequestError('Community has reached its member limit');
     }
 
     await tx.joinRequest.update({

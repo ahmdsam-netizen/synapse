@@ -35,7 +35,7 @@ export function PostingDetailView({
       (posting.creatorId === currentUser?.id ||
         (posting as any).creator_id === currentUser?.id));
 
-  const groupName = posting.groupName || (posting as any).group_name || 'Group';
+  const groupName = posting.groupName || (posting as any).group_name || 'Community';
   const rolesNeeded = posting.rolesNeeded || (posting as any).roles_needed || [];
   const requiredSkills =
     posting.requiredSkills || (posting as any).required_skills || [];

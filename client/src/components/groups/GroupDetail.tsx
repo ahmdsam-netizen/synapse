@@ -6,9 +6,7 @@ import { XMarkIcon, TrashIcon, ClockIcon } from '@heroicons/react/24/outline';
 import { groupsApi } from '../../api/groups';
 import { StatusBadge } from '../shared/StatusBadge';
 import { MemberList } from './MemberList';
-import { AdminRequestQueue } from '../board/AdminRequestQueue';
 import { GroupChat } from '../chat/GroupChat';
-import { CreatePostingOnlyModal } from '../board/CreatePostingOnlyModal';
 import { Modal } from '../shared/Modal';
 import { useAuth } from '../../context/AuthContext';
 import { cn, formatTimeRemaining } from '../../lib/utils';
@@ -20,7 +18,6 @@ interface GroupDetailProps {
 
 export function GroupDetail({ groupId, onClose }: GroupDetailProps) {
   const queryClient = useQueryClient();
-  const [isCreatePostingOpen, setIsCreatePostingOpen] = useState(false);
 
   const { data: groupData, isPending } = useQuery({
     queryKey: ['groups', groupId],
@@ -178,17 +175,12 @@ export function GroupDetail({ groupId, onClose }: GroupDetailProps) {
                   <TabGroup className="flex flex-1 flex-col">
                     <div className="border-b border-gray-200 px-4 sm:px-6">
                       <TabList className="-mb-px flex space-x-8">
-                        {['Members', 'Postings', ...(currentUserRole === 'admin' ? ['Requests'] : []), 'Chat'].map((tab) => (
+                        {['Members', 'Chat'].map((tab) => (
                           <Tab
                             key={tab}
                             className="whitespace-nowrap border-b-2 border-transparent px-1 py-4 text-sm font-medium text-gray-500 hover:border-gray-300 hover:text-gray-700 data-[selected]:border-primary-500 data-[selected]:text-primary-600 outline-none"
                           >
                             {tab}
-                            {tab === 'Requests' && pendingRequests > 0 && (
-                              <span className="ml-2 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-600">
-                                {pendingRequests}
-                              </span>
-                            )}
                           </Tab>
                         ))}
                       </TabList>
@@ -203,34 +195,6 @@ export function GroupDetail({ groupId, onClose }: GroupDetailProps) {
                           onRemove={(userId) => removeMutation.mutate(userId)}
                         />
                       </TabPanel>
-                      
-                      <TabPanel>
-                        <div className="space-y-4">
-                          {currentUserRole === 'admin' && (
-                            <button
-                              onClick={() => setIsCreatePostingOpen(true)}
-                              className="w-full rounded-lg border-2 border-dashed border-gray-300 p-4 text-center text-sm font-medium text-gray-600 hover:border-gray-400 hover:text-gray-900"
-                            >
-                              + Create New Posting
-                            </button>
-                          )}
-                          {(groupDetail.openPostings || groupDetail.postings || []).map((p: any) => (
-                            <div key={p.id} className="rounded-lg border border-gray-200 p-4">
-                              <h4 className="font-semibold">{p.title}</h4>
-                              <p className="text-sm text-gray-600">{p.description}</p>
-                            </div>
-                          ))}
-                          {!(groupDetail.openPostings || groupDetail.postings || [])?.length && (
-                            <p className="text-sm text-gray-500 text-center py-4">No active postings.</p>
-                          )}
-                        </div>
-                      </TabPanel>
-
-                      {currentUserRole === 'admin' && (
-                        <TabPanel>
-                          <AdminRequestQueue groupId={groupId} />
-                        </TabPanel>
-                      )}
 
                       <TabPanel>
                         <GroupChat
@@ -247,14 +211,6 @@ export function GroupDetail({ groupId, onClose }: GroupDetailProps) {
           </div>
         </div>
       </div>
-
-      {isCreatePostingOpen && (
-        <CreatePostingOnlyModal
-          open={isCreatePostingOpen}
-          onClose={() => setIsCreatePostingOpen(false)}
-          initialGroupId={groupId}
-        />
-      )}
 
       {isConfirmDeleteOpen && (
         <Modal

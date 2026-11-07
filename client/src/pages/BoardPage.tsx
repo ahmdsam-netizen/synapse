@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import {
   GlobeAltIcon,
-  AcademicCapIcon,
+  ClipboardDocumentListIcon,
   FolderIcon,
   MagnifyingGlassIcon,
   XMarkIcon,
@@ -18,7 +18,7 @@ import { EmptyState } from '../components/shared/EmptyState';
 import { InfiniteScrollLoader } from '../components/shared/InfiniteScrollLoader';
 import { JoinRequestModal } from '../components/board/JoinRequestModal';
 import { CreatePostingOnlyModal } from '../components/board/CreatePostingOnlyModal';
-import { CreateGroupOnlyModal } from '../components/board/CreateGroupOnlyModal';
+import { CreateCommunityModal } from '../components/communities/CreateCommunityModal';
 import { PageTabButton } from '../components/shared/PageTabButton';
 import { BoardPosting } from '../types';
 import { cn } from '../lib/utils';
@@ -29,7 +29,7 @@ export default function BoardPage() {
   const [viewingPosting, setViewingPosting] = useState<BoardPosting | null>(null);
   const [isJoinModalOpen, setIsJoinModalOpen] = useState(false);
   const [isCreatePostingOpen, setIsCreatePostingOpen] = useState(false);
-  const [isCreateGroupOpen, setIsCreateGroupOpen] = useState(false);
+  const [isCreateCommunityOpen, setIsCreateCommunityOpen] = useState(false);
   const [postingInitialGroupId, setPostingInitialGroupId] = useState<string | undefined>(undefined);
 
   // Search Post state
@@ -63,18 +63,19 @@ export default function BoardPage() {
     },
   });
 
-  // 2. Campus Postings
+  // 2. Matched / Recommended Postings
   const {
-    data: collegePostings,
-    hasNextPage: hasNextCollege,
-    isFetchingNextPage: isFetchingNextCollege,
-    isLoading: isLoadingCollege,
-    fetchNextPage: fetchNextCollege,
-    sentinelRef: collegeRef,
+    data: matchedPostings,
+    hasNextPage: hasNextMatched,
+    isFetchingNextPage: isFetchingNextMatched,
+    isLoading: isLoadingMatched,
+    fetchNextPage: fetchNextMatched,
+    sentinelRef: matchedRef,
   } = useInfiniteScroll<BoardPosting>({
-    queryKey: ['board', 'college'],
+    queryKey: ['board', 'matched'],
+    enabled: selectedTabIndex === 1,
     queryFn: async (cursor) => {
-      const res = await boardsApi.getCollege({ cursor, limit: 30 });
+      const res = await boardsApi.getMatched(cursor, 30);
       return normalizePaginated(res.data);
     },
   });
@@ -95,7 +96,7 @@ export default function BoardPage() {
     },
   });
 
-  // 4. Search Postings
+  // 3. Search Postings
   const {
     data: searchPostings,
     hasNextPage: hasNextSearch,
@@ -162,21 +163,22 @@ export default function BoardPage() {
     ref: any,
     hasNextPage: boolean,
     isFetchingNextPage: boolean,
-    tabType: 'global' | 'college' | 'my-postings',
+    tabType: 'global' | 'matched' | 'my-postings',
     onLoadMore?: () => void
   ) => {
     if (postings.length === 0) {
-      let emptyTitle = 'No postings available';
-      let emptyDesc = 'There are currently no active recruitment postings in this view. Check back soon or create a new posting.';
-      if (tabType === 'college') {
-        emptyTitle = 'No postings from your campus';
-        emptyDesc = 'Be the first on your campus to create a group and recruitment posting!';
+      if (tabType === 'matched') {
+        return (
+          <EmptyState
+            title="No matched postings found"
+            description="Update your profile skills and interests to get matched with relevant communities and opportunities."
+          />
+        );
       }
-
       return (
         <EmptyState
-          title={emptyTitle}
-          description={emptyDesc}
+          title="No postings available"
+          description="There are currently no active recruitment postings in this view. Check back soon or create a new posting."
         />
       );
     }
@@ -189,6 +191,7 @@ export default function BoardPage() {
               key={posting.id}
               posting={posting}
               onClick={() => setViewingPosting(posting)}
+              isMatchedTab={tabType === 'matched'}
               isMyPost={tabType === 'my-postings'}
             />
           ))}
@@ -266,16 +269,16 @@ export default function BoardPage() {
         <PageTabButton
           active={selectedTabIndex === 1}
           onClick={() => setSelectedTabIndex(1)}
-          icon={AcademicCapIcon}
-          title="#myCollege"
-          subtitle="Campus project postings"
+          icon={ClipboardDocumentListIcon}
+          title="#recommended"
+          subtitle="Matched for your skills"
         />
         <PageTabButton
           active={selectedTabIndex === 2}
           onClick={() => setSelectedTabIndex(2)}
           icon={FolderIcon}
           title="#byMe"
-          subtitle="Your group postings"
+          subtitle="Your community postings"
           count={myPostings.length}
         />
         <PageTabButton
@@ -309,10 +312,10 @@ export default function BoardPage() {
         </>
       )}
 
-      {/* VIEW 1: MY COLLEGE POSTINGS */}
+      {/* VIEW 1: RECOMMENDED POSTINGS */}
       {selectedTabIndex === 1 && (
         <>
-          {isLoadingCollege ? (
+          {isLoadingMatched ? (
             <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
               {[...Array(6)].map((_, i) => (
                 <div key={i} className="h-64 animate-pulse rounded-xl bg-gray-200" />
@@ -320,12 +323,12 @@ export default function BoardPage() {
             </div>
           ) : (
             renderPostings(
-              collegePostings,
-              collegeRef,
-              hasNextCollege,
-              isFetchingNextCollege,
-              'college',
-              () => fetchNextCollege()
+              matchedPostings,
+              matchedRef,
+              hasNextMatched,
+              isFetchingNextMatched,
+              'matched',
+              () => fetchNextMatched()
             )
           )}
         </>
@@ -476,18 +479,18 @@ export default function BoardPage() {
           setPostingInitialGroupId(undefined);
         }}
         initialGroupId={postingInitialGroupId}
-        onRequestCreateGroup={() => {
+        onRequestCreateCommunity={() => {
           setIsCreatePostingOpen(false);
-          setIsCreateGroupOpen(true);
+          setIsCreateCommunityOpen(true);
         }}
       />
 
-      <CreateGroupOnlyModal
-        open={isCreateGroupOpen}
-        onClose={() => setIsCreateGroupOpen(false)}
-        onSuccess={(newGroupId) => {
-          setIsCreateGroupOpen(false);
-          setPostingInitialGroupId(newGroupId);
+      <CreateCommunityModal
+        open={isCreateCommunityOpen}
+        onClose={() => setIsCreateCommunityOpen(false)}
+        onSuccess={(newCommunityId) => {
+          setIsCreateCommunityOpen(false);
+          setPostingInitialGroupId(newCommunityId);
           setIsCreatePostingOpen(true);
         }}
       />

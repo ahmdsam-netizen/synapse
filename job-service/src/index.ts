@@ -1,7 +1,7 @@
 import { initMaintenance } from './jobs/maintenance.js';
 import { pool } from './config/database.js';
 
-console.log('[JobService] Starting Synapse Background Job Service...');
+console.log('[JobService] Starting Date&Innovate Background Job Service...');
 
 const { worker } = await initMaintenance();
 

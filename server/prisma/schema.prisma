@@ -52,6 +52,8 @@ model User {
   sentInvites         GroupInvite[]   @relation("SentGroupInvites")
   receivedInvites     GroupInvite[]   @relation("ReceivedGroupInvites")
   groupMessages       GroupMessage[]
+  drops               Drop[]
+  dropVotes           DropVote[]
 
   @@map("users")
 }
@@ -271,4 +273,31 @@ model UserBlock {
 
   @@id([blockerId, blockedId])
   @@map("user_blocks")
+}
+
+model Drop {
+  id        String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String     @map("user_id") @db.Uuid
+  content   String     @db.Text
+  createdAt DateTime?  @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt DateTime?  @default(now()) @map("updated_at") @db.Timestamp(6)
+
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  votes     DropVote[]
+
+  @@map("drops")
+}
+
+model DropVote {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  dropId    String    @map("drop_id") @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  voteType  String    @map("vote_type") @db.VarChar(10)
+  createdAt DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
+
+  drop      Drop      @relation(fields: [dropId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([dropId, userId])
+  @@map("drop_votes")
 }

@@ -11,7 +11,13 @@ export const communitiesApi = {
   getDetail: (id: string) =>
     apiClient.get<Community>(`/communities/${id}`),
 
-  create: (data: { name: string; description?: string }) =>
+  create: (data: {
+    name: string;
+    description?: string;
+    type?: 'permanent' | 'temporary';
+    durationDays?: number | null;
+    maxMembers?: number;
+  }) =>
     apiClient.post<Community>('/communities', data),
 
   join: (id: string) =>

@@ -8,7 +8,7 @@ export default function TermsAndConditionsPage() {
           to="/"
           className="inline-flex items-center text-sm font-medium text-primary-600 hover:text-primary-700 mb-4"
         >
-          &larr; Back to Synapse
+          &larr; Back to Date&amp;Innovate
         </Link>
         <h1 className="text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">Terms and Conditions</h1>
         <p className="mt-2 text-sm text-gray-500">Effective Date: September 22, 2026</p>
@@ -18,7 +18,7 @@ export default function TermsAndConditionsPage() {
         <section className="space-y-3">
           <h2 className="text-xl font-semibold text-gray-900">1. Agreement to Terms</h2>
           <p>
-            By registering an account or accessing the Synapse platform, you agree to be bound by these Terms and 
+            By registering an account or accessing the Date&amp;Innovate platform, you agree to be bound by these Terms and 
             Conditions and all applicable laws and regulations. If you do not agree with any of these terms, you are 
             prohibited from using or accessing this service.
           </p>
@@ -27,7 +27,7 @@ export default function TermsAndConditionsPage() {
         <section className="space-y-3">
           <h2 className="text-xl font-semibold text-gray-900">2. Eligibility and Institutional Affiliation</h2>
           <p>
-            Synapse is designed exclusively for verified students, researchers, and faculty members belonging to 
+            Date&amp;Innovate is designed exclusively for verified students, researchers, and faculty members belonging to 
             accredited educational institutions. Registration requires a verified institutional email address. 
             Accounts registered using fraudulent credentials, disposable emails, or unauthorized domains will be 
             terminated immediately without prior notice.
@@ -38,8 +38,8 @@ export default function TermsAndConditionsPage() {
           <h2 className="text-xl font-semibold text-gray-900">3. User Accounts and Security</h2>
           <p>
             You are responsible for safeguarding your login credentials and maintaining the confidentiality of your account. 
-            You agree to notify Synapse administrators immediately if you suspect any unauthorized access or security breach. 
-            Synapse cannot and will not be liable for losses or damages resulting from failure to safeguard your credentials.
+            You agree to notify Date&amp;Innovate administrators immediately if you suspect any unauthorized access or security breach. 
+            Date&amp;Innovate cannot and will not be liable for losses or damages resulting from failure to safeguard your credentials.
           </p>
         </section>
 
@@ -60,12 +60,12 @@ export default function TermsAndConditionsPage() {
         <section className="space-y-3">
           <h2 className="text-xl font-semibold text-gray-900">5. Project Collaboration and Intellectual Property</h2>
           <p>
-            Synapse facilitates introductions and collaboration between peers. We do not claim ownership of the project code, 
+            Date&amp;Innovate facilitates introductions and collaboration between peers. We do not claim ownership of the project code, 
             designs, research papers, or intellectual property developed by users. Ownership agreements between teammates 
             remain solely the responsibility of the participating members.
           </p>
           <p>
-            By publishing project descriptions, recruitment postings, and work samples on Synapse, you grant the platform 
+            By publishing project descriptions, recruitment postings, and work samples on Date&amp;Innovate, you grant the platform 
             a non-exclusive license to index, display, and search that content solely to deliver platform functionality.
           </p>
         </section>
@@ -73,7 +73,7 @@ export default function TermsAndConditionsPage() {
         <section className="space-y-3">
           <h2 className="text-xl font-semibold text-gray-900">6. Platform Moderation and Termination</h2>
           <p>
-            Group administrators retain discretion to review and decide upon join requests for their groups. Synapse 
+            Group administrators retain discretion to review and decide upon join requests for their groups. Date&amp;Innovate 
             administrators reserve the right to suspend or remove any posting, group, or user account found in violation 
             of these Terms or deemed detrimental to the safety of the student community.
           </p>
@@ -83,7 +83,7 @@ export default function TermsAndConditionsPage() {
           <h2 className="text-xl font-semibold text-gray-900">7. Disclaimer of Warranties</h2>
           <p>
             The platform is provided on an &ldquo;as is&rdquo; and &ldquo;as available&rdquo; basis. While we strive for high reliability 
-            and continuous service, Synapse makes no warranties, expressed or implied, regarding system uptime, uninterrupted 
+            and continuous service, Date&amp;Innovate makes no warranties, expressed or implied, regarding system uptime, uninterrupted 
             operation, or the suitability of collaboration partners found through the platform.
           </p>
         </section>
@@ -91,7 +91,7 @@ export default function TermsAndConditionsPage() {
         <section className="space-y-3">
           <h2 className="text-xl font-semibold text-gray-900">8. Limitation of Liability</h2>
           <p>
-            In no event shall Synapse or its maintainers be liable for any direct, indirect, incidental, or consequential damages 
+            In no event shall Date&amp;Innovate or its maintainers be liable for any direct, indirect, incidental, or consequential damages 
             arising from your use of or inability to use the platform or any disputes arising among collaborating students.
           </p>
         </section>
@@ -102,7 +102,7 @@ export default function TermsAndConditionsPage() {
             Questions regarding these Terms and Conditions should be directed to:
           </p>
           <p className="font-medium text-gray-900">
-            Legal &amp; Compliance Team: <span className="text-primary-600">legal@synapseplatform.edu</span>
+            Legal &amp; Compliance Team: <span className="text-primary-600">legal@dateandinnovate.edu</span>
           </p>
         </section>
       </div>

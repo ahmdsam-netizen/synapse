@@ -229,8 +229,8 @@ export default function ConnectionsPage() {
                 title="No connections yet"
                 description="Expand your student circle by discovering peers through recommendations or browsing the collaborative project boards."
                 action={{
-                  label: 'Discover Recommendations',
-                  onClick: () => (window.location.href = '/recommendations'),
+                  label: 'Explore Recommendations',
+                  onClick: () => (window.location.href = '/explore'),
                 }}
               />
             )}
@@ -282,8 +282,8 @@ export default function ConnectionsPage() {
                 title="No 2nd-degree connections yet"
                 description="Connect with more classmates to expand your network and discover friends of friends."
                 action={{
-                  label: 'Discover Recommendations',
-                  onClick: () => (window.location.href = '/recommendations'),
+                  label: 'Explore Recommendations',
+                  onClick: () => (window.location.href = '/explore'),
                 }}
               />
             )}

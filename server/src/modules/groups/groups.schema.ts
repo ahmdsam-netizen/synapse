@@ -3,7 +3,7 @@ import { z } from 'zod';
 export const createGroupSchema = z.object({
   name: z.string().min(2).max(100),
   description: z.string().max(2000).optional(),
-  visibility: z.enum(['global', 'college']),
+  visibility: z.enum(['global', 'college']).optional().default('global'),
   maxMembers: z.coerce.number().min(2).max(8).optional().default(8),
   durationDays: z.coerce.number().refine((val) => [1, 7, 15, 30].includes(val), {
     message: 'Duration must be 1, 7, 15, or 30 days',

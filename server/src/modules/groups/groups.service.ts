@@ -2,8 +2,7 @@ import { prisma } from '../../config/prisma.js';
 import { NotFoundError, ForbiddenError, BadRequestError, ConflictError } from '../../utils/errors.js';
 import { scheduleGroupExpiration, cancelGroupExpiration } from '../../jobs/maintenance.js';
 
-export const createGroup = async (userId: string, collegeId: string | null, data: any) => {
-  const groupCollegeId = data.visibility === 'college' ? collegeId : null;
+export const createGroup = async (userId: string, _collegeId: string | null, data: any) => {
   const durationDays = [1, 7, 15, 30].includes(Number(data.durationDays)) ? Number(data.durationDays) : 7;
   const expiresAt = new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000);
 
@@ -13,8 +12,8 @@ export const createGroup = async (userId: string, collegeId: string | null, data
         name: data.name,
         description: data.description,
         creatorId: userId,
-        collegeId: groupCollegeId,
-        visibility: data.visibility || 'global',
+        collegeId: null,
+        visibility: 'global',
         maxMembers: data.maxMembers ? Math.min(Number(data.maxMembers), 8) : 8,
         expiresAt,
       },
@@ -185,7 +184,7 @@ export const updateGroup = async (groupId: string, userId: string, data: any) =>
   const updateData: Record<string, any> = {};
   if (data.name !== undefined) updateData.name = data.name;
   if (data.description !== undefined) updateData.description = data.description;
-  if (data.visibility !== undefined) updateData.visibility = data.visibility;
+  if (data.visibility !== undefined) updateData.visibility = 'global';
   if (data.maxMembers !== undefined || data.max_members !== undefined) {
     updateData.maxMembers = Number(data.maxMembers ?? data.max_members);
   }

@@ -1,6 +1,6 @@
-# Synapse - Distributed Skill-Based Collaboration & Peer Discovery Platform
+# Date&Innovate - Distributed Skill-Based Collaboration & Peer Discovery Platform
 
-Synapse is a distributed, high-performance web platform designed for college students to showcase their verified technical expertise, discover compatible peers through semantic vector similarity and 2nd-degree social graph traversal, form collaborative project groups, participate in global campus communities, and match with project opportunities.
+Date&Innovate is a distributed, high-performance web platform designed for college students to showcase their verified technical expertise, discover compatible peers through semantic vector similarity and 2nd-degree social graph traversal, form collaborative project groups, participate in global campus communities, and match with project opportunities.
 
 ---
 

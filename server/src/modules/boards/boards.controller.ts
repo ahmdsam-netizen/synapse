@@ -10,7 +10,7 @@ export const getGlobalHandler = async (req: AuthRequest, res: Response) => {
 
 export const getCollegeHandler = async (req: AuthRequest, res: Response) => {
   const { cursor, limit, ...filters } = req.query as any;
-  const result = await boardsService.getGlobalBoard(cursor, Number(limit), { ...filters, collegeId: req.user?.collegeId }, req.user?.id);
+  const result = await boardsService.getGlobalBoard(cursor, Number(limit), filters, req.user?.id);
   res.json({ status: 'success', data: result });
 };
 
